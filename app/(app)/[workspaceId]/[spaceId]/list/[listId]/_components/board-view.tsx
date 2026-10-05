@@ -1296,6 +1296,21 @@ function CardContent({
                         >
                           {sub.title}
                         </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              aria-label={`Status: ${sub.statusName ?? "No status"}`}
+                              className="size-2.5 shrink-0 rounded-full"
+                              role="img"
+                              style={{
+                                backgroundColor: sub.statusColor ?? "#9CA3AF",
+                              }}
+                            />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            {sub.statusName ?? "No status"}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     );
                   })
