@@ -5,6 +5,7 @@ import {
   BuildingsIcon,
   ChartBarIcon,
   EnvelopeIcon,
+  GearSixIcon,
   ListIcon,
   PlugsIcon,
   ScrollIcon,
@@ -20,7 +21,19 @@ import { PRODUCT_NAME } from "@/config/platform";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-const ADMIN_NAV_ITEMS = [
+interface NavChild {
+  href: string;
+  label: string;
+}
+
+interface NavItem {
+  children?: NavChild[];
+  href: string;
+  icon: typeof SquaresFourIcon;
+  label: string;
+}
+
+const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: SquaresFourIcon },
   { href: "/admin/users", label: "Users", icon: UsersIcon },
   { href: "/admin/workspaces", label: "Workspaces", icon: BuildingsIcon },
@@ -28,12 +41,20 @@ const ADMIN_NAV_ITEMS = [
   { href: "/admin/audit-log", label: "Audit Log", icon: ScrollIcon },
 ];
 
-const ORBIT_NAV_ITEMS = [
+const ORBIT_NAV_ITEMS: NavItem[] = [
   { href: "/orbit", label: "Overview", icon: SquaresFourIcon },
   { href: "/orbit/users", label: "Users", icon: UsersIcon },
   { href: "/orbit/email", label: "Email", icon: EnvelopeIcon },
   { href: "/orbit/queues", label: "Queues", icon: StackIcon },
   { href: "/orbit/integrations", label: "Integrations", icon: PlugsIcon },
+  {
+    href: "/orbit/settings",
+    label: "Settings",
+    icon: GearSixIcon,
+    children: [
+      { href: "/orbit/settings/notifications", label: "Notifications" },
+    ],
+  },
 ];
 
 interface AdminSidebarProps {
@@ -129,29 +150,56 @@ export function AdminSidebar({ email }: AdminSidebarProps) {
               item.href === "/admin" || item.href === "/orbit"
                 ? pathname === item.href
                 : pathname.startsWith(item.href);
+            // A group with children is a heading-style parent: the parent
+            // stays neutral and the active child carries the highlight.
+            const hasChildren = !!item.children?.length;
+            const parentActive = hasChildren ? false : isActive;
             return (
-              <Link
-                className={cn(
-                  "relative flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  isActive
-                    ? "bg-emerald-500/10 text-emerald-300 font-medium"
-                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                )}
-                href={item.href}
-                key={item.href}
-                onClick={() => setMobileOpen(false)}
-              >
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400" />
-                )}
-                <Icon
+              <div key={item.href}>
+                <Link
                   className={cn(
-                    "w-4 h-4 shrink-0",
-                    isActive && "text-emerald-400"
+                    "relative flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                    parentActive
+                      ? "bg-emerald-500/10 text-emerald-300 font-medium"
+                      : "text-slate-400 hover:bg-slate-800/60 hover:text-white",
+                    hasChildren && isActive && "text-slate-200"
                   )}
-                />
-                {item.label}
-              </Link>
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {parentActive && (
+                    <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400" />
+                  )}
+                  <Icon
+                    className={cn(
+                      "w-4 h-4 shrink-0",
+                      parentActive && "text-emerald-400"
+                    )}
+                  />
+                  {item.label}
+                </Link>
+                {item.children?.map((child) => {
+                  const childActive = pathname.startsWith(child.href);
+                  return (
+                    <Link
+                      className={cn(
+                        "relative ml-7 mt-0.5 flex items-center rounded-md px-3 py-1.5 text-sm transition-colors",
+                        childActive
+                          ? "bg-emerald-500/10 text-emerald-300 font-medium"
+                          : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                      )}
+                      href={child.href}
+                      key={child.href}
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      {childActive && (
+                        <span className="absolute -left-4 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-emerald-400" />
+                      )}
+                      {child.label}
+                    </Link>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>

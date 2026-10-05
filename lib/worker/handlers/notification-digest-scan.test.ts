@@ -5,12 +5,16 @@ import {
 } from "@/lib/worker/handlers/notification-digest-scan";
 import { JOB_NAMES } from "@/lib/worker/job-types";
 
-const { selectMock, enqueueJobMock } = vi.hoisted(() => ({
+const { selectMock, enqueueJobMock, emailsEnabledMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   enqueueJobMock: vi.fn(),
+  emailsEnabledMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ db: { select: selectMock } }));
+vi.mock("@/lib/integration-settings", () => ({
+  areNotificationEmailsEnabled: emailsEnabledMock,
+}));
 vi.mock("@/lib/worker/enqueue", () => ({ enqueueJob: enqueueJobMock }));
 
 interface QueryChain extends PromiseLike<unknown[]> {
@@ -36,6 +40,8 @@ function queueDigestUsers(result: unknown[]) {
 beforeEach(() => {
   selectMock.mockReset();
   enqueueJobMock.mockReset();
+  emailsEnabledMock.mockReset();
+  emailsEnabledMock.mockResolvedValue(true);
 });
 
 describe("localTime", () => {
@@ -132,6 +138,16 @@ describe("handleNotificationDigestScan", () => {
   it("does nothing when there are no digest users", async () => {
     queueDigestUsers([]);
     await handleNotificationDigestScan([]);
+    expect(enqueueJobMock).not.toHaveBeenCalled();
+  });
+
+  it("queues nothing and reads no digest users when the platform notification-email switch is off", async () => {
+    emailsEnabledMock.mockResolvedValue(false);
+    queueDigestUsers([
+      { userId: "u1", digestTime: "08:00", digestTimezone: "UTC" },
+    ]);
+    await handleNotificationDigestScan([]);
+    expect(selectMock).not.toHaveBeenCalled();
     expect(enqueueJobMock).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import { PRODUCT_NAME } from "@/config/platform";
 import { notification, user, userNotificationPreference } from "@/db/schema";
 import { db } from "@/lib/db";
 import { enqueueEmail } from "@/lib/email/index";
+import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import { emailDefaultFor } from "@/lib/notifications/types";
 
 interface DigestSendPayload {
@@ -15,6 +16,11 @@ interface DigestSendPayload {
 export async function handleNotificationDigestSend(
   jobs: Job<DigestSendPayload>[]
 ) {
+  // Re-checked at send time so digests queued before the switch was turned off
+  // are dropped too.
+  if (!(await areNotificationEmailsEnabled())) {
+    return;
+  }
   for (const job of jobs) {
     await processDigest(job.data);
   }

@@ -100,6 +100,11 @@ export default function NotificationSettingsPage() {
   // disabled controls, no "coming soon" — the email UI simply appears once
   // SMTP is configured.
   const emailAvailable: boolean = notifPrefData?.smtpConfigured ?? false;
+  // Platform admin master switch (Orbit → Integrations). When off, no
+  // notification email is sent whatever the user picks, so the email controls
+  // are shown disabled — saved values are left untouched.
+  const emailBlockedByAdmin: boolean =
+    notifPrefData?.notificationEmailsEnabled === false;
 
   // This row also holds the in-app notification sound toggle, which has no
   // dependency on SMTP, so — unlike the email-specific fields below — it's
@@ -253,11 +258,22 @@ export default function NotificationSettingsPage() {
       {emailAvailable && (
         <div className="space-y-4 rounded-xl border p-4">
           <h3 className="font-medium">Email Delivery</h3>
+          {emailBlockedByAdmin && (
+            <p className="rounded-md bg-base-200/40 px-3 py-2 text-xs text-base-content/60">
+              Email notifications are turned off by the platform administrator.
+              Your preferences are saved and will apply again when they're
+              turned back on.
+            </p>
+          )}
           <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
             <Label className="sm:w-32 sm:shrink-0" htmlFor="delivery-mode">
               Delivery mode
             </Label>
-            <Select onValueChange={setDeliveryMode} value={deliveryMode}>
+            <Select
+              disabled={emailBlockedByAdmin}
+              onValueChange={setDeliveryMode}
+              value={deliveryMode}
+            >
               <SelectTrigger className="w-full sm:w-40" id="delivery-mode">
                 <SelectValue />
               </SelectTrigger>
@@ -273,7 +289,11 @@ export default function NotificationSettingsPage() {
               <Label className="sm:w-32 sm:shrink-0" htmlFor="digest-time">
                 Digest time
               </Label>
-              <Select onValueChange={setDigestTime} value={digestTime}>
+              <Select
+                disabled={emailBlockedByAdmin}
+                onValueChange={setDigestTime}
+                value={digestTime}
+              >
                 <SelectTrigger className="w-full sm:w-40" id="digest-time">
                   <SelectValue />
                 </SelectTrigger>
@@ -287,7 +307,11 @@ export default function NotificationSettingsPage() {
               </Select>
             </div>
           )}
-          <Button disabled={saving} onClick={saveEmailPrefs} size="sm">
+          <Button
+            disabled={saving || emailBlockedByAdmin}
+            onClick={saveEmailPrefs}
+            size="sm"
+          >
             {saving ? "Saving..." : "Save email preferences"}
           </Button>
         </div>
@@ -353,6 +377,7 @@ export default function NotificationSettingsPage() {
                       <td className="px-4 py-2.5 text-center">
                         <Switch
                           checked={pref.emailEnabled}
+                          disabled={emailBlockedByAdmin}
                           onCheckedChange={(v) =>
                             void saveNotifPref(
                               pref.triggerType,
