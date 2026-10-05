@@ -3,6 +3,7 @@
 import { and, count, eq, max } from "drizzle-orm";
 import { list, pinnedTask, space, task } from "@/db/schema";
 import { db } from "@/lib/db";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function pinTask(
   taskId: string,
@@ -96,7 +97,8 @@ export async function getPinnedTasks(
     .where(
       and(
         eq(pinnedTask.userId, userId),
-        eq(pinnedTask.workspaceId, workspaceId)
+        eq(pinnedTask.workspaceId, workspaceId),
+        notDeleted()
       )
     )
     .orderBy(pinnedTask.orderIndex);

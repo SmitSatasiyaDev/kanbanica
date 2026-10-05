@@ -22,8 +22,9 @@ export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Current usage = every task row in the workspace (active, completed, archived,
- * subtasks, orphans). Deleted tasks are hard-deleted, so they free capacity;
- * archiving does not.
+ * subtasks, orphans, and tasks in the Trash). Trashed tasks keep counting until
+ * they are permanently deleted from the Trash; archiving
+ * does not free capacity either.
  */
 export async function getWorkspaceTaskUsage(
   workspaceId: string,

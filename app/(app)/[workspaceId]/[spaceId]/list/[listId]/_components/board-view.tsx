@@ -792,9 +792,18 @@ function CardContent({
   }
   async function confirmDelete() {
     setDeleting(true);
-    await deleteTask(workspaceId!, spaceId!, listId ?? null, task.id);
+    const res = await deleteTask(
+      workspaceId!,
+      spaceId!,
+      listId ?? null,
+      task.id
+    );
     setDeleting(false);
     setDeleteOpen(false);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     onRefresh?.();
   }
   async function copyTaskLink() {
@@ -1476,8 +1485,8 @@ function CardContent({
               <div>
                 <p className="text-base font-semibold">Delete task?</p>
                 <p className="mt-1 text-sm text-base-content/60">
-                  “{localTitle}” will be permanently deleted. This can’t be
-                  undone.
+                  “{localTitle}” will move to Trash. A workspace admin can
+                  restore it.
                 </p>
               </div>
               <div className="mt-2 flex w-full gap-2">

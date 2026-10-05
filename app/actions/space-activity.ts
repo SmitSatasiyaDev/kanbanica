@@ -7,6 +7,7 @@ import { activityLog, list, task, user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canAccessSpace } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 
 export interface SpaceActivityEntry {
   actorEmail: string | null;
@@ -71,6 +72,7 @@ export async function getSpaceActivity(
       and(
         eq(list.spaceId, spaceId),
         eq(list.isArchived, false),
+        notDeleted(),
         gte(activityLog.createdAt, since)
       )
     )

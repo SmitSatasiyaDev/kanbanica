@@ -8,6 +8,7 @@ import {
   listStatus,
   space,
   spaceMember,
+  task,
   workspaceMember,
 } from "@/db/schema";
 import { auth } from "@/lib/auth";
@@ -15,6 +16,7 @@ import { db } from "@/lib/db";
 import { createNotifications } from "@/lib/notifications/create-notification";
 import { getWorkspaceMembership } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { deleteStorageForTasks } from "@/lib/trash";
 
 type SpacePermission = "FULL_ACCESS" | "EDIT" | "VIEW";
 
@@ -356,6 +358,20 @@ export async function deleteSpace(
   const m = await getWorkspaceMembership(session.user.id, workspaceId);
   if (!m || (m.role !== "OWNER" && m.role !== "ADMIN")) {
     return { error: "Only admins can delete spaces" };
+  }
+
+  // Tasks (including trashed ones) cascade with the space; storage does not.
+  const [owned] = await db
+    .select({ id: space.id })
+    .from(space)
+    .where(and(eq(space.id, spaceId), eq(space.workspaceId, workspaceId)))
+    .limit(1);
+  if (owned) {
+    const spaceTasks = await db
+      .select({ id: task.id })
+      .from(task)
+      .where(eq(task.spaceId, spaceId));
+    await deleteStorageForTasks(spaceTasks.map((t) => t.id));
   }
 
   await db

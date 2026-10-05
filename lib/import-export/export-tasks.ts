@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { db } from "@/lib/db";
 import { requireViewAccess } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 import { tiptapToPlainText } from "./tiptap-text";
 
 export const EXPORT_BASE_COLUMNS = [
@@ -70,6 +71,7 @@ export async function getExportableTasks(
     eq(task.workspaceId, scope.workspaceId),
     eq(task.spaceId, scope.spaceId),
     eq(task.isArchived, false),
+    notDeleted(),
   ];
   if (scope.listId) {
     conditions.push(eq(task.listId, scope.listId));
@@ -135,7 +137,7 @@ export async function getExportableTasks(
         ? db
             .select({ id: task.id, seqNumber: task.seqNumber })
             .from(task)
-            .where(inArray(task.id, parentIds))
+            .where(and(inArray(task.id, parentIds), notDeleted()))
         : Promise.resolve([]),
       // listId=null (whole-project export) returns space-wide + workspace-wide
       // fields only — list-specific fields are intentionally omitted when

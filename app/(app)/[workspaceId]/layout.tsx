@@ -22,6 +22,7 @@ import {
   getAccessibleSpaceIds,
   getWorkspaceMembership,
 } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 import { getWorkspaceCapacity } from "@/lib/workspace-limits";
 
 interface WorkspaceLayoutProps {
@@ -242,6 +243,7 @@ export default async function WorkspaceLayout({
           .where(
             and(
               inArray(task.spaceId, spaceIdList),
+              notDeleted(),
               eq(task.isArchived, false),
               isNull(task.parentTaskId)
             )

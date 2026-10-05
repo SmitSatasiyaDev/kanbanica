@@ -31,6 +31,7 @@ import { db } from "@/lib/db";
 import { getAccessibleSpaceIds } from "@/lib/permissions";
 import type { Priority } from "@/lib/priority-config";
 import { workspaceOverviewCacheTag } from "@/lib/realtime/cache-tags";
+import { notDeleted } from "@/lib/task-visibility";
 
 // Analytics-only classification, independent of `listStatus.type` (which
 // drives Board/List column grouping) and independent of status *name* — set
@@ -278,6 +279,7 @@ async function buildWorkspaceOverview(
       .where(
         and(
           inArray(space.id, accessibleSpaceIds),
+          notDeleted(),
           eq(task.isArchived, false),
           eq(list.isArchived, false),
           isNull(task.parentTaskId)
@@ -392,7 +394,8 @@ async function buildWorkspaceOverview(
       and(
         eq(activityLog.eventType, "status_changed"),
         gte(activityLog.createdAt, since7),
-        inArray(list.spaceId, accessibleSpaceIds)
+        inArray(list.spaceId, accessibleSpaceIds),
+        notDeleted()
       )
     );
   const completedTaskIds = new Set(
@@ -639,6 +642,7 @@ async function buildWorkspaceOverview(
             taskSprint.sprintId,
             sprintRows.map((s) => s.id)
           ),
+          notDeleted(),
           eq(task.isArchived, false)
         )
       );
@@ -697,6 +701,7 @@ async function buildWorkspaceOverview(
       and(
         inArray(space.id, accessibleSpaceIds),
         eq(list.isArchived, false),
+        notDeleted(),
         gte(activityLog.createdAt, subDays(new Date(), 30))
       )
     )
@@ -871,6 +876,7 @@ export async function getWorkspaceTasksByStatus(
     .where(
       and(
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false),
         isNull(task.parentTaskId),
@@ -936,6 +942,7 @@ export async function getWorkspaceTasksByPriority(
     .where(
       and(
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false),
         isNull(task.parentTaskId),
@@ -1007,6 +1014,7 @@ export async function getWorkspaceTasksByDeadline(
     .where(
       and(
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false),
         isNull(task.parentTaskId),
@@ -1105,6 +1113,7 @@ export async function getWorkspaceTasksByAssignee(
       and(
         eq(taskAssignee.userId, userId),
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false),
         isNull(task.parentTaskId)
@@ -1177,6 +1186,7 @@ export async function getWorkspaceMyFocusTasks(
       and(
         eq(taskAssignee.userId, session.user.id),
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false),
         isNull(task.parentTaskId)

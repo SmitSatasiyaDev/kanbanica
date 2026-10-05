@@ -12,7 +12,6 @@ import {
   spaceMember,
   task,
   taskAssignee,
-  taskAttachment,
   taskDependency,
   taskTag,
 } from "@/db/schema";
@@ -20,6 +19,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getWorkspaceMembership } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
+import { deleteStorageForTasks } from "@/lib/trash";
 import { requireTaskCapacity } from "@/lib/workspace-limits";
 
 // ── Permission helpers ─────────────────────────────────────────────────────
@@ -270,25 +271,13 @@ export async function deleteList(
     return { error: "Only Admin and Owner can permanently delete lists" };
   }
 
-  // Collect R2 attachment keys before cascade-deleting
+  // The cascade removes every task in the list — including ones in the Trash —
+  // but never touches storage, so delete the files first.
   const tasks = await db
     .select({ id: task.id })
     .from(task)
     .where(eq(task.listId, listId));
-  const taskIds = tasks.map((t) => t.id);
-
-  if (taskIds.length > 0) {
-    const attachments = await db
-      .select({ fileUrl: taskAttachment.fileUrl })
-      .from(taskAttachment)
-      .where(inArray(taskAttachment.taskId, taskIds));
-
-    // TODO: delete from R2 in batches when lib/storage.ts is configured
-    // for (let i = 0; i < attachments.length; i += 50) {
-    //   await Promise.allSettled(attachments.slice(i, i + 50).map(a => deleteFromR2(a.fileUrl)));
-    // }
-    void attachments; // referenced to satisfy lint until storage is wired
-  }
+  await deleteStorageForTasks(tasks.map((t) => t.id));
 
   await db
     .delete(list)
@@ -375,7 +364,10 @@ export async function duplicateList(
   // Load all tasks up front so both the top-level filter and the subtask
   // parent-membership check work off the same snapshot.
   const allTasks = opts.copyTasks
-    ? await db.select().from(task).where(eq(task.listId, listId))
+    ? await db
+        .select()
+        .from(task)
+        .where(and(eq(task.listId, listId), notDeleted()))
     : [];
 
   const passesArchived = (t: (typeof allTasks)[number]) =>
@@ -626,7 +618,7 @@ export async function getListTaskCounts(
   const rows = await db
     .select({ statusId: task.statusId, isArchived: task.isArchived })
     .from(task)
-    .where(eq(task.listId, listId));
+    .where(and(eq(task.listId, listId), notDeleted()));
 
   let activeOpen = 0;
   let activeCompleted = 0;

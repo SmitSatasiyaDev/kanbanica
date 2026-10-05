@@ -13,6 +13,7 @@ import {
   requireEditAccess,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
 
 // Scoped refresh: revalidate the list page (card badges) and hint the open task
 // detail so only THAT task's view refetches.
@@ -71,7 +72,7 @@ export async function startTimer(
       const [startedTask] = await tx
         .select({ title: task.title })
         .from(task)
-        .where(eq(task.id, taskId))
+        .where(and(eq(task.id, taskId), notDeleted()))
         .limit(1);
 
       // Auto-stop the caller's current running timer, if any.
@@ -97,7 +98,7 @@ export async function startTimer(
         const [prevTask] = await tx
           .select({ title: task.title })
           .from(task)
-          .where(eq(task.id, running.taskId))
+          .where(and(eq(task.id, running.taskId), notDeleted()))
           .limit(1);
         stopped = {
           title: prevTask?.title ?? "task",

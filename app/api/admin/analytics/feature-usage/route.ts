@@ -1,8 +1,9 @@
-import { count, gte, sql } from "drizzle-orm";
+import { and, count, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { comment, space, task } from "@/db/schema";
 import { getAdminSession } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function GET() {
   const session = await getAdminSession();
@@ -20,7 +21,7 @@ export async function GET() {
           count: count(),
         })
         .from(task)
-        .where(gte(task.createdAt, thirtyDaysAgo))
+        .where(and(gte(task.createdAt, thirtyDaysAgo), notDeleted()))
         .groupBy(sql`date_trunc('day', ${task.createdAt})::date`)
         .orderBy(sql`date_trunc('day', ${task.createdAt})::date`),
       db
@@ -45,6 +46,7 @@ export async function GET() {
         db
           .select({ count: count() })
           .from(task)
+          .where(notDeleted())
           .then((r) => r[0].count),
         db
           .select({ count: count() })

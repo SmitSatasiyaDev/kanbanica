@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { list, task } from "@/db/schema";
@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { requireSpacePermission } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
 import { pinTaskToList, unpinTaskFromList } from "@/server/list-pin";
 
 async function resolveTask(taskId: string) {
@@ -17,7 +18,7 @@ async function resolveTask(taskId: string) {
     })
     .from(task)
     .leftJoin(list, eq(task.listId, list.id))
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   return row ?? null;
 }

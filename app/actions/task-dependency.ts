@@ -13,6 +13,7 @@ import {
   hasPermissionLevel,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
 
 // `taskId` lets an open task detail view skip refetching for other tasks.
 function revalidateList(
@@ -85,7 +86,7 @@ export async function addDependency(
   const [target] = await db
     .select({ id: task.id, workspaceId: task.workspaceId })
     .from(task)
-    .where(eq(task.id, dependsOnTaskId))
+    .where(and(eq(task.id, dependsOnTaskId), notDeleted()))
     .limit(1);
   if (!target) {
     return { error: "Target task not found" };
@@ -203,7 +204,13 @@ export async function searchTasksForDependency(
     const recent = await db
       .select(select)
       .from(task)
-      .where(and(eq(task.workspaceId, workspaceId), eq(task.isArchived, false)))
+      .where(
+        and(
+          eq(task.workspaceId, workspaceId),
+          eq(task.isArchived, false),
+          notDeleted()
+        )
+      )
       .orderBy(desc(task.updatedAt))
       .limit(25);
     return { tasks: recent.filter((t) => t.id !== excludeTaskId).slice(0, 8) };
@@ -212,7 +219,13 @@ export async function searchTasksForDependency(
   const results = await db
     .select(select)
     .from(task)
-    .where(and(eq(task.workspaceId, workspaceId), eq(task.isArchived, false)))
+    .where(
+      and(
+        eq(task.workspaceId, workspaceId),
+        eq(task.isArchived, false),
+        notDeleted()
+      )
+    )
     .orderBy(desc(task.updatedAt))
     .limit(50);
 

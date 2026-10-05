@@ -10,6 +10,7 @@ import {
   inArray,
   isNull,
   notInArray,
+  or,
 } from "drizzle-orm";
 import { headers } from "next/headers";
 import { spaceRecipientUserIds } from "@/app/actions/space";
@@ -55,6 +56,8 @@ import {
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { storage } from "@/lib/storage";
+import { notDeleted } from "@/lib/task-visibility";
+import { softDeleteTasks } from "@/lib/trash";
 import { requireTaskCapacity } from "@/lib/workspace-limits";
 
 // ─── Permission helpers ──────────────────────────────────────────────────────
@@ -360,7 +363,11 @@ export async function getTaskDetail(
   );
   const canEdit = permission !== null && hasPermissionLevel(permission, "edit");
 
-  const [t] = await db.select().from(task).where(eq(task.id, taskId)).limit(1);
+  const [t] = await db
+    .select()
+    .from(task)
+    .where(and(eq(task.id, taskId), notDeleted()))
+    .limit(1);
   if (!t) {
     return { error: "Task not found" };
   }
@@ -451,7 +458,7 @@ export async function getTaskDetail(
       .leftJoin(listStatus, eq(listStatus.id, task.statusId))
       .leftJoin(space, eq(space.id, task.spaceId))
       .leftJoin(list, eq(list.id, task.listId))
-      .where(eq(taskDependency.taskId, taskId)),
+      .where(and(eq(taskDependency.taskId, taskId), notDeleted())),
 
     // "Blocks" — tasks that depend on this task (reverse edge, generated in UI)
     db
@@ -473,7 +480,7 @@ export async function getTaskDetail(
       .leftJoin(listStatus, eq(listStatus.id, task.statusId))
       .leftJoin(space, eq(space.id, task.spaceId))
       .leftJoin(list, eq(list.id, task.listId))
-      .where(eq(taskDependency.dependsOnTaskId, taskId)),
+      .where(and(eq(taskDependency.dependsOnTaskId, taskId), notDeleted())),
 
     // Time entries (seconds-based). Running rows have `endTime`/`durationSeconds`
     // NULL. Newest-first; joined to the user for the history list.
@@ -525,7 +532,13 @@ export async function getTaskDetail(
       })
       .from(task)
       .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-      .where(and(eq(task.parentTaskId, taskId), eq(task.isArchived, false)))
+      .where(
+        and(
+          eq(task.parentTaskId, taskId),
+          eq(task.isArchived, false),
+          notDeleted()
+        )
+      )
       .orderBy(asc(task.orderIndex)),
 
     t.parentTaskId
@@ -651,7 +664,8 @@ export async function updateTask(
     .where(
       and(
         eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId)
+        listId ? eq(task.listId, listId) : isNull(task.listId),
+        notDeleted()
       )
     )
     .limit(1);
@@ -866,7 +880,7 @@ export async function updateTaskStatus(
   const [existing] = await db
     .select({ statusId: task.statusId, title: task.title })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   if (!existing) {
     return { error: "Task not found" };
@@ -973,13 +987,25 @@ export async function deleteTask(
     return { error: "You don't have permission to delete tasks" };
   }
 
-  // Gather notification recipients + title BEFORE the delete (the rows are gone
-  // afterwards). Notify assignees + watchers that the task was deleted.
+  // Soft delete: the task moves to Trash (Trash) and can be
+  // restored. Notify assignees + watchers that the task was deleted.
   const [existing] = await db
     .select({ title: task.title })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(
+      and(
+        eq(task.id, taskId),
+        eq(task.workspaceId, workspaceId),
+        // Some tasks (e.g. the onboarding sample) have no spaceId.
+        or(isNull(task.spaceId), eq(task.spaceId, spaceId)),
+        listId ? eq(task.listId, listId) : isNull(task.listId),
+        notDeleted()
+      )
+    )
     .limit(1);
+  if (!existing) {
+    return { error: "Task not found" };
+  }
   const [delAssignees, delWatchers] = await Promise.all([
     db
       .select({ userId: taskAssignee.userId })
@@ -994,37 +1020,22 @@ export async function deleteTask(
     ...new Set([...delAssignees, ...delWatchers].map((r) => r.userId)),
   ];
 
-  // Delete attachment storage objects before the task (the rows cascade on
-  // task delete, but the stored files would otherwise orphan). Covers file
-  // attachments AND inline note/description images.
-  const taskFiles = await db
-    .select({ fileUrl: taskAttachment.fileUrl })
-    .from(taskAttachment)
-    .where(eq(taskAttachment.taskId, taskId));
-  if (taskFiles.length > 0) {
-    await Promise.all(
-      taskFiles.map(async (a) => {
-        try {
-          await storage.delete(a.fileUrl);
-        } catch {
-          // Best-effort: a missing storage file must not block task deletion.
-        }
-      })
-    );
+  // Attachment files stay in storage while the task is in the Trash; they are
+  // removed only on permanent delete (lib/trash.ts → purgeTasks).
+  const { parentIds, subtaskIds } = await softDeleteTasks(
+    [taskId],
+    session.user.id
+  );
+  if (parentIds.length === 0) {
+    return { error: "Task not found" };
   }
+  await writeActivityLog(taskId, session.user.id, "task_deleted", {
+    subtasks: subtaskIds.length,
+  });
 
-  await db
-    .delete(task)
-    .where(
-      and(
-        eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId)
-      )
-    );
-
-  // Notify assignees + watchers (actor auto-excluded). The task no longer
-  // exists, so the inbox shows an info toast on click (see getNotificationTarget)
-  // and the push click points at the list/workspace instead of a 404 task page.
+  // Notify assignees + watchers (actor auto-excluded). The task is in the Trash,
+  // so the inbox shows an info toast on click (see getNotificationTarget) and the
+  // push click points at the list/workspace instead of a task page.
   if (deleteRecipientIds.length > 0) {
     const actorName = session.user.name ?? session.user.email ?? "Someone";
     const taskTitle = existing?.title ?? "a task";
@@ -1154,7 +1165,7 @@ export async function duplicateTask(
   const [original] = await db
     .select()
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   // The source must belong to the workspace the caller was authorised against
   // (and whose task limit is checked below).
@@ -1170,7 +1181,13 @@ export async function duplicateTask(
   const subtasks = await db
     .select()
     .from(task)
-    .where(and(eq(task.parentTaskId, taskId), eq(task.isArchived, false)))
+    .where(
+      and(
+        eq(task.parentTaskId, taskId),
+        eq(task.isArchived, false),
+        notDeleted()
+      )
+    )
     .orderBy(asc(task.orderIndex));
 
   const sources = [original, ...subtasks];
@@ -1187,6 +1204,7 @@ export async function duplicateTask(
         targetListId ? eq(task.listId, targetListId) : isNull(task.listId),
         isNull(task.parentTaskId),
         eq(task.isArchived, false),
+        notDeleted(),
         original.statusId
           ? eq(task.statusId, original.statusId)
           : isNull(task.statusId),
@@ -1349,7 +1367,8 @@ export async function duplicateTask(
                   .where(
                     and(
                       inArray(task.id, externalTargets),
-                      eq(task.workspaceId, workspaceId)
+                      eq(task.workspaceId, workspaceId),
+                      notDeleted()
                     )
                   )
               ).map((r) => r.id)
@@ -1423,7 +1442,7 @@ export async function moveTask(
   const [t] = await db
     .select({ listId: task.listId, statusId: task.statusId })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   if (!t) {
     return { error: "Task not found" };
@@ -1624,7 +1643,7 @@ export async function createSubtask(
       parentTaskId: task.parentTaskId,
     })
     .from(task)
-    .where(eq(task.id, parentTaskId))
+    .where(and(eq(task.id, parentTaskId), notDeleted()))
     .limit(1);
   // The parent must belong to the workspace the caller was authorised against
   // (and whose task limit is checked below).
@@ -1736,7 +1755,13 @@ export async function getSubtasks(
     })
     .from(task)
     .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-    .where(and(eq(task.parentTaskId, parentTaskId), eq(task.isArchived, false)))
+    .where(
+      and(
+        eq(task.parentTaskId, parentTaskId),
+        eq(task.isArchived, false),
+        notDeleted()
+      )
+    )
     .orderBy(asc(task.orderIndex));
 
   return { subtasks };
@@ -1807,7 +1832,9 @@ export async function bulkUpdateStatus(
     })
     .from(task)
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
-    .where(and(inArray(task.id, taskIds), eq(task.spaceId, spaceId)));
+    .where(
+      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+    );
 
   if (affected.length === 0) {
     return { ok: true };
@@ -1924,7 +1951,14 @@ export async function bulkDeleteTasks(
   const affected = await db
     .select({ id: task.id, title: task.title, listId: task.listId })
     .from(task)
-    .where(and(inArray(task.id, taskIds), eq(task.spaceId, spaceId)));
+    .where(
+      and(
+        inArray(task.id, taskIds),
+        eq(task.workspaceId, workspaceId),
+        or(isNull(task.spaceId), eq(task.spaceId, spaceId)),
+        notDeleted()
+      )
+    );
   if (affected.length === 0) {
     return { ok: true };
   }
@@ -1949,7 +1983,11 @@ export async function bulkDeleteTasks(
 
   // Scope by space, not a single list — the sprint view (and other cross-list
   // views) selects tasks that may span lists and has no single listId to pass.
-  await db.delete(task).where(inArray(task.id, validTaskIds));
+  // Soft delete → Trash. Files stay in storage until a permanent delete.
+  const { parentIds } = await softDeleteTasks(validTaskIds, session.user.id);
+  await Promise.all(
+    parentIds.map((id) => writeActivityLog(id, session.user.id, "task_deleted"))
+  );
 
   // Notify assignees + watchers per task, grouped per recipient — matches
   // deleteTask's single-task recipient set/copy in the N=1 case, one
@@ -2031,7 +2069,9 @@ export async function bulkArchiveTasks(
   const affected = await db
     .select({ id: task.id })
     .from(task)
-    .where(and(inArray(task.id, taskIds), eq(task.spaceId, spaceId)));
+    .where(
+      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+    );
   if (affected.length === 0) {
     return { ok: true };
   }
@@ -2115,7 +2155,7 @@ export async function bulkMoveTasks(
     const [t] = await db
       .select({ listId: task.listId, statusId: task.statusId })
       .from(task)
-      .where(eq(task.id, taskId))
+      .where(and(eq(task.id, taskId), notDeleted()))
       .limit(1);
     if (!t) {
       continue;
@@ -2264,7 +2304,9 @@ export async function getTaskLocation(
     })
     .from(task)
     .leftJoin(list, eq(task.listId, list.id))
-    .where(and(eq(task.id, taskId), eq(task.workspaceId, workspaceId)))
+    .where(
+      and(eq(task.id, taskId), eq(task.workspaceId, workspaceId), notDeleted())
+    )
     .limit(1);
 
   if (!row) {
@@ -2371,7 +2413,8 @@ export async function getArchivedTasksForList(
       and(
         eq(task.listId, listId),
         eq(task.isArchived, true),
-        isNull(task.parentTaskId)
+        isNull(task.parentTaskId),
+        notDeleted()
       )
     )
     .orderBy(asc(task.orderIndex));

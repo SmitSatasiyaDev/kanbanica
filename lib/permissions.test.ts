@@ -62,9 +62,12 @@ describe("hasPermissionLevel", () => {
     ["full_access", "view", true],
     ["full_access", "edit", true],
     ["full_access", "full_access", true],
-  ] as const)("permission=%s, minLevel=%s -> %s", (permission, minLevel, expected) => {
-    expect(hasPermissionLevel(permission, minLevel)).toBe(expected);
-  });
+  ] as const)(
+    "permission=%s, minLevel=%s -> %s",
+    (permission, minLevel, expected) => {
+      expect(hasPermissionLevel(permission, minLevel)).toBe(expected);
+    }
+  );
 });
 
 describe("getWorkspaceMembership", () => {
@@ -107,11 +110,14 @@ describe("getSpacePermission", () => {
     ["FULL_ACCESS", "full_access"],
     ["EDIT", "edit"],
     ["VIEW", "view"],
-  ] as const)("maps a MEMBER's %s spaceMember row to %s", async (dbValue, expected) => {
-    queueSelectResults([{ role: "MEMBER" }], [{ permission: dbValue }]);
-    const result = await getSpacePermission("u1", "w1", "s1");
-    expect(result).toBe(expected);
-  });
+  ] as const)(
+    "maps a MEMBER's %s spaceMember row to %s",
+    async (dbValue, expected) => {
+      queueSelectResults([{ role: "MEMBER" }], [{ permission: dbValue }]);
+      const result = await getSpacePermission("u1", "w1", "s1");
+      expect(result).toBe(expected);
+    }
+  );
 
   it("returns null for a MEMBER with no spaceMember row", async () => {
     queueSelectResults([{ role: "MEMBER" }], []);

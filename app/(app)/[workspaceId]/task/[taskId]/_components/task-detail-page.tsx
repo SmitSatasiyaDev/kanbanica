@@ -1280,8 +1280,12 @@ export function TaskDetailPage({
 
   async function confirmDelete() {
     setDeleting(true);
-    await deleteTask(workspaceId, spaceId, listId, taskId);
+    const res = await deleteTask(workspaceId, spaceId, listId, taskId);
     setDeleting(false);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     router.push(backUrl);
   }
 
@@ -1290,9 +1294,18 @@ export function TaskDetailPage({
       return;
     }
     setDeletingSubtaskBusy(true);
-    await deleteTask(workspaceId, spaceId, listId, deletingSubtask.id);
+    const res = await deleteTask(
+      workspaceId,
+      spaceId,
+      listId,
+      deletingSubtask.id
+    );
     setDeletingSubtaskBusy(false);
     setDeletingSubtask(null);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     load();
   }
 
@@ -3048,7 +3061,7 @@ export function TaskDetailPage({
                 Delete Task
               </DialogTitle>
               <p className="text-sm text-base-content/60 mt-1">
-                This action cannot be undone.
+                The task moves to Trash. A workspace admin can restore it.
               </p>
             </div>
           </div>
@@ -3087,9 +3100,9 @@ export function TaskDetailPage({
               </DialogTitle>
               <p className="text-sm text-base-content/60 mt-1">
                 {deletingSubtask
-                  ? `"${deletingSubtask.title}" will be permanently deleted.`
+                  ? `"${deletingSubtask.title}" will move to Trash.`
                   : ""}{" "}
-                This action cannot be undone.
+                A workspace admin can restore it.
               </p>
             </div>
           </div>

@@ -648,9 +648,13 @@ export function TaskDetailPanel({
 
   async function confirmDelete() {
     setDeleting(true);
-    await deleteTask(workspaceId, spaceId, listId, taskId);
+    const res = await deleteTask(workspaceId, spaceId, listId, taskId);
     setDeleting(false);
     setDeleteOpen(false);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     onOpenChange(false);
   }
 
@@ -1530,7 +1534,7 @@ export function TaskDetailPanel({
               Delete Task
             </DialogTitle>
             <p className="text-sm text-base-content/60 mt-1">
-              This action cannot be undone.
+              The task moves to Trash. A workspace admin can restore it.
             </p>
           </div>
         </div>

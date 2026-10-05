@@ -34,6 +34,7 @@ import {
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { closeSprintAndRollover } from "@/lib/sprint/rollover";
+import { notDeleted } from "@/lib/task-visibility";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -370,7 +371,7 @@ export async function getSprintWithTasks(
     .from(taskSprint)
     .innerJoin(task, eq(taskSprint.taskId, task.id))
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
-    .where(eq(taskSprint.sprintId, sprintId));
+    .where(and(eq(taskSprint.sprintId, sprintId), notDeleted()));
 
   return { sprint: targetSprint, tasks };
 }
@@ -393,6 +394,7 @@ async function resolveDefaultListForSprint(
     .where(
       and(
         eq(taskSprint.sprintId, sprintId),
+        notDeleted(),
         eq(task.isArchived, false),
         isNotNull(task.listId)
       )
@@ -459,6 +461,7 @@ export async function addTaskToSprint(
       and(
         eq(task.id, taskId),
         eq(task.workspaceId, workspaceId),
+        notDeleted(),
         eq(task.isArchived, false)
       )
     )
@@ -598,7 +601,13 @@ export async function markAllSprintTasksDone(
     .from(taskSprint)
     .innerJoin(task, eq(taskSprint.taskId, task.id))
     .innerJoin(listStatus, eq(task.statusId, listStatus.id))
-    .where(and(eq(taskSprint.sprintId, sprintId), eq(task.isArchived, false)));
+    .where(
+      and(
+        eq(taskSprint.sprintId, sprintId),
+        notDeleted(),
+        eq(task.isArchived, false)
+      )
+    );
 
   const incompleteTasks = sprintTasks.filter((t) => t.statusType !== "CLOSED");
 
@@ -769,6 +778,7 @@ export async function getBacklogTasks(
   // 4. Fetch backlog tasks with status info
   const baseConditions = [
     inArray(task.listId, listIds),
+    notDeleted(),
     eq(task.isArchived, false),
     isNull(task.parentTaskId),
   ];
@@ -968,7 +978,11 @@ export async function getActiveSprintView(
     .innerJoin(task, eq(task.id, taskSprint.taskId))
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
     .where(
-      and(eq(taskSprint.sprintId, activeSprint.id), eq(task.isArchived, false))
+      and(
+        eq(taskSprint.sprintId, activeSprint.id),
+        notDeleted(),
+        eq(task.isArchived, false)
+      )
     )
     .orderBy(asc(task.orderIndex));
 
@@ -1163,6 +1177,7 @@ export async function getArchivedTasksForSprint(
     .where(
       and(
         eq(taskSprint.sprintId, activeSprint.id),
+        notDeleted(),
         eq(task.isArchived, true),
         isNull(task.parentTaskId)
       )
@@ -1379,7 +1394,13 @@ export async function getClosedSprintView(
     .from(taskSprint)
     .innerJoin(task, eq(task.id, taskSprint.taskId))
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
-    .where(and(eq(taskSprint.sprintId, sprintId), eq(task.isArchived, false)))
+    .where(
+      and(
+        eq(taskSprint.sprintId, sprintId),
+        notDeleted(),
+        eq(task.isArchived, false)
+      )
+    )
     .orderBy(asc(task.orderIndex));
 
   if (sprintTasks.length === 0) {

@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { createBulkNotifications } from "@/lib/notifications/create-bulk-notifications";
 import { requireEditAccess } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
 import {
   getWorkspaceCapacity,
   requireTaskCapacity,
@@ -87,7 +88,9 @@ export async function buildValidationContext(
           parentTaskId: task.parentTaskId,
         })
         .from(task)
-        .where(and(eq(task.listId, listId), eq(task.isArchived, false))),
+        .where(
+          and(eq(task.listId, listId), eq(task.isArchived, false), notDeleted())
+        ),
     ]);
 
   const membersByEmail = new Map<string, WorkspaceMemberOption>();

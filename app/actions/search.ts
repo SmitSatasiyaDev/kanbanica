@@ -36,6 +36,7 @@ import {
 } from "@/lib/filters/options";
 import { buildTaskFilterConditions } from "@/lib/filters/task-conditions";
 import { canAccessSpace, getAccessibleSpaceIds } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 
 // ─── Global Search ──────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ export async function globalSearch(
   if (wantTasks) {
     const conditions: SQL[] = [
       eq(task.workspaceId, workspaceId),
+      notDeleted(),
       isNull(task.parentTaskId),
       eq(list.isArchived, false),
       inArray(space.id, accessibleSpaceIds),
@@ -590,6 +592,7 @@ export async function getFilteredTasks(
   // assignee/tags now applied in SQL via the same builder the omnibox uses).
   const conditions: SQL[] = [
     eq(task.listId, listId),
+    notDeleted(),
     eq(task.isArchived, false),
     isNull(task.parentTaskId),
     ...buildTaskFilterConditions(filters),

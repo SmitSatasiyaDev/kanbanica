@@ -62,6 +62,10 @@ export function describeEvent(
       return "archived this task";
     case "task_unarchived":
       return "unarchived this task";
+    case "task_deleted":
+      return "moved this task to Trash";
+    case "task_restored":
+      return "restored this task from Trash";
     case "task_moved":
       return "moved this task";
     case "time_logged":
@@ -113,6 +117,8 @@ const ACTIVITY_ICON: Record<string, string> = {
   attachment_deleted: "🗑️",
   task_archived: "📦",
   task_unarchived: "📤",
+  task_deleted: "🗑️",
+  task_restored: "♻️",
   task_moved: "🔀",
   time_logged: "⏱️",
   timer_started: "▶️",

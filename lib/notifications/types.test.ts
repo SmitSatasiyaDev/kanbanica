@@ -9,11 +9,12 @@ describe("emailDefaultFor", () => {
   const allTriggers = Object.values(NOTIFICATION_TRIGGERS);
   const enabledSet = new Set<string>(EMAIL_DEFAULT_ENABLED_TRIGGERS);
 
-  it.each(
-    allTriggers
-  )("matches EMAIL_DEFAULT_ENABLED_TRIGGERS membership for trigger '%s'", (trigger) => {
-    expect(emailDefaultFor(trigger)).toBe(enabledSet.has(trigger));
-  });
+  it.each(allTriggers)(
+    "matches EMAIL_DEFAULT_ENABLED_TRIGGERS membership for trigger '%s'",
+    (trigger) => {
+      expect(emailDefaultFor(trigger)).toBe(enabledSet.has(trigger));
+    }
+  );
 
   it("enables email by default for exactly the 7 documented 'about you' triggers", () => {
     const enabled = allTriggers.filter((trigger) => emailDefaultFor(trigger));

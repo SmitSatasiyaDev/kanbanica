@@ -29,6 +29,8 @@ export type ActivityEventType =
   | "task_moved"
   | "task_archived"
   | "task_unarchived"
+  | "task_deleted"
+  | "task_restored"
   | "time_logged"
   | "timer_started"
   | "timer_stopped"

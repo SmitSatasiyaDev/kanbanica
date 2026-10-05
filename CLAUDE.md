@@ -129,7 +129,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 - All IDs are UUIDs (generated via `crypto.randomUUID()` before insert).
 - All tables have `createdAt` and `updatedAt` (updated manually on each write).
 - Soft deletes use `isArchived` + `archivedAt` pattern (not a deleted flag).
-- Hard deletes are immediate with no recovery unless otherwise stated in the feature doc.
+- Hard deletes are immediate with no recovery unless otherwise stated in the feature doc. **Tasks are the exception: deleting a task moves it to the Trash** (see "Trash" below).
 
 ### Permissions
 - Two-level model: Workspace Role + Project Permission.
@@ -183,6 +183,14 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 ### Space (Project) Landing Page
 - `app/(app)/[workspaceId]/[spaceId]/page.tsx` redirects to the space's first non-archived list, or renders `EmptySpace` if it has none. After archiving a list or project, navigation goes here (or the workspace's first list) — **never to `/onboarding`**. The workspace-home + onboarding pages search **all** accessible spaces (not just the first) before falling back to onboarding.
 
+### Trash (Deleted Tasks)
+- `deleteTask` / `bulkDeleteTasks` are **soft deletes**: they set `task.deletedAt/deletedBy` (+ `deletedWithParentId` on subtasks trashed with a parent) via `softDeleteTasks()` (`lib/trash.ts`). Nothing is removed — comments, history, time entries and attachment files stay until a permanent delete.
+- **Every read of `task` must AND in `notDeleted()`** (`lib/task-visibility.ts`). Exceptions: the Trash itself, the task-limit count, and hard-delete cascades.
+- **Trashed tasks still count toward `workspace.maxTasks`** until permanently deleted (restore needs no capacity check).
+- Trash UI/actions are **Owner/Admin only**: bottom user menu → Trash (`/[workspaceId]/trash`, `app/actions/trash.ts`; not a Workspace Settings tab). Permanent delete = `purgeTasks()` (storage files first, then rows), also run automatically: job `trash.auto-purge` (daily + on worker boot) purges tasks whose `deletedAt` is 30+ days old (`lib/trash-retention.ts`, `lib/worker/handlers/trash-auto-purge.ts`). Manual *Delete forever*, *Empty trash* and the job all go through the shared locked, storage-first `purgeTrashedTask()` (a storage failure leaves the task in Trash and retries next run).
+- Deleting a list/project/workspace is still a hard cascade (trashed tasks inside are lost); `deleteList`/`deleteSpace` delete files first via `deleteStorageForTasks`.
+- Full spec: `docs/trash.md`.
+
 ### Folder
 - Folder is **post-MVP**. Do not implement it. `folder_id` on List is nullable and always null in MVP.
 
@@ -205,7 +213,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 
 ### Workspace Task Limit
 - **Setting:** `workspace.maxTasks` (`db/schema/workspace.ts`, nullable `integer`). **`null` = unlimited** (the default for every existing workspace — migration is a nullable column, no backfill). Valid values when set: integer 1…10,000,000. Edited by Workspace **Owner/Admin** only via `updateWorkspaceTaskLimit` (`app/actions/workspace.ts`, reuses the local `requireAdmin`) from Settings → **Limits** (`app/(app)/[workspaceId]/settings/limits` — one page holding both the Task Limit and Member & Guest Limits cards; `components/workspace/limits-settings-form.tsx`). No quota table, usage table or counter column — usage is computed.
-- **What counts:** `COUNT(*) FROM task WHERE workspace_id = ?` — active, completed, **archived**, subtasks and orphaned rows all count. Deleted tasks are hard-deleted, so **deleting frees capacity; archiving does not**. Archive/unarchive/move/edit/complete/delete are never gated. Lowering the limit below current usage is allowed (nothing is deleted; creation stays blocked until usage drops).
+- **What counts:** `COUNT(*) FROM task WHERE workspace_id = ?` — active, completed, **archived**, **trashed**, subtasks and orphaned rows all count. Deleting a task only moves it to the Trash, so **capacity is freed only when it is permanently deleted (manually from the Trash, or by the 30-day auto-purge); archiving does not free it either**. Archive/unarchive/move/edit/complete/delete are never gated. Lowering the limit below current usage is allowed (nothing is deleted; creation stays blocked until usage drops).
 - **Single gate:** `requireTaskCapacity(tx, workspaceId, n)` (`lib/workspace-limits.ts`). **Every task-creating path must call it as the first statement of the transaction that inserts the task rows** — it locks the workspace row (`SELECT … FOR UPDATE`), counts only if a limit is set, rejects when `used + n > maxTasks`, then reserves `n` `taskSeq` numbers and returns `seqBase` (new tasks get `seqBase+1…seqBase+n`). A rejection writes nothing, so no seq numbers are burned. Never bump `workspace.taskSeq` anywhere else, and never do an unlocked count-then-insert.
 - **Protected paths:** `createTask`, `createSubtask`, `duplicateTask` (task + non-archived subtasks), `duplicateList` (every copied task), `bulkImportTasks`. The onboarding sample task is intentionally exempt (brand-new workspace). Any new creation path (API, job, integration) must use the gate.
 - **Batches are all-or-nothing:** a duplicate/import that doesn't fit is rejected whole. Import: `/import/validate` returns informational `capacity`, the wizard disables Import when selected rows exceed it, and `/import/confirm` re-checks under the lock and returns **HTTP 409**. Capacity errors carry `code: "TASK_LIMIT_REACHED"` (`lib/task-limit.ts` — pure/client-safe constants + message, re-exported by `lib/workspace-limits.ts`).
@@ -257,6 +265,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 | Search & Filters | `docs/search-and-filters.md` |
 | Custom Fields | `docs/custom-fields.md` |
 | Task Import/Export | `docs/import-export.md` |
+| Trash (Deleted Tasks) | `docs/trash.md` |
 | Permissions | `docs/permission-model.md` |
 | Settings | `docs/settings.md` |
 | Integrations | `docs/integrations.md` |

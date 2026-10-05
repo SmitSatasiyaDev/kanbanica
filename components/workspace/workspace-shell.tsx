@@ -1419,6 +1419,20 @@ export function WorkspaceShell({
                     <BellIcon className="size-4 shrink-0 text-base-content/60" />
                     Notification settings
                   </Link>
+                  {/* Trash holds workspace-wide deleted tasks — owner/admin only. */}
+                  {isAdmin && (
+                    <Link
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-base-200"
+                      href={`/${workspace.id}/trash`}
+                      onClick={() => {
+                        setProfileOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <TrashIcon className="size-4 shrink-0 text-base-content/60" />
+                      Trash
+                    </Link>
+                  )}
                   <Link
                     className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-base-200"
                     href={`/${workspace.id}/theme`}

@@ -53,27 +53,25 @@ describe("sanitizeDatabaseUrl", () => {
       expect(result.ssl).toBe(expected);
     });
 
-    it.each([
-      "allow",
-      "prefer",
-      "require",
-      "no-verify",
-    ])("sslmode=%s -> encrypt without verification", (mode) => {
-      const result = sanitizeDatabaseUrl(
-        `postgresql://u:p@h/db?sslmode=${mode}`
-      );
-      expect(result.ssl).toEqual({ rejectUnauthorized: false });
-    });
+    it.each(["allow", "prefer", "require", "no-verify"])(
+      "sslmode=%s -> encrypt without verification",
+      (mode) => {
+        const result = sanitizeDatabaseUrl(
+          `postgresql://u:p@h/db?sslmode=${mode}`
+        );
+        expect(result.ssl).toEqual({ rejectUnauthorized: false });
+      }
+    );
 
-    it.each([
-      "verify-ca",
-      "verify-full",
-    ])("sslmode=%s -> encrypt and verify", (mode) => {
-      const result = sanitizeDatabaseUrl(
-        `postgresql://u:p@h/db?sslmode=${mode}`
-      );
-      expect(result.ssl).toBe(true);
-    });
+    it.each(["verify-ca", "verify-full"])(
+      "sslmode=%s -> encrypt and verify",
+      (mode) => {
+        const result = sanitizeDatabaseUrl(
+          `postgresql://u:p@h/db?sslmode=${mode}`
+        );
+        expect(result.ssl).toBe(true);
+      }
+    );
 
     it("treats an absent sslmode as no TLS (bundled-Postgres default)", () => {
       const result = sanitizeDatabaseUrl("postgresql://u:p@h/db");

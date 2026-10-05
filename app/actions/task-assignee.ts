@@ -24,6 +24,7 @@ import {
   hasPermissionLevel,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { notDeleted } from "@/lib/task-visibility";
 
 // `taskId` lets an open task detail view skip refetching for other tasks.
 function revalidateTask(
@@ -85,7 +86,7 @@ export async function addAssignee(
     const [taskRow] = await db
       .select({ title: task.title })
       .from(task)
-      .where(eq(task.id, taskId))
+      .where(and(eq(task.id, taskId), notDeleted()))
       .limit(1);
 
     if (taskRow) {
@@ -162,7 +163,7 @@ export async function removeAssignee(
     const [taskRow] = await db
       .select({ title: task.title })
       .from(task)
-      .where(eq(task.id, taskId))
+      .where(and(eq(task.id, taskId), notDeleted()))
       .limit(1);
     if (taskRow) {
       createNotifications({
@@ -245,7 +246,9 @@ export async function bulkAssignTasks(
   const validTasks = await db
     .select({ id: task.id, title: task.title })
     .from(task)
-    .where(and(inArray(task.id, taskIds), eq(task.spaceId, spaceId)));
+    .where(
+      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+    );
   if (validTasks.length === 0) {
     return { ok: true, updated: 0 };
   }

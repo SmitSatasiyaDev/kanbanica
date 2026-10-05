@@ -204,6 +204,13 @@
       "when": 1791189102760,
       "tag": "0028_notification_emails_toggle",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791194550114,
+      "tag": "0029_task_trash",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgEnum, pgTable, text, timestamp, integer, boolean, json, index, unique } from "drizzle-orm/pg-core";
 import { workspace } from "./workspace";
 import { space } from "./space";
@@ -31,6 +32,10 @@ export const task = pgTable(
     orderIndex: integer("order_index").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Trash: null deletedAt = live. Rows are purged permanently from Admin → Deleted Tasks.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by"),
+    deletedWithParentId: text("deleted_with_parent_id"),
     isPinnedToList: boolean("is_pinned_to_list").notNull().default(false),
     pinnedToListBy: text("pinned_to_list_by"),
     pinnedToListAt: timestamp("pinned_to_list_at", { withTimezone: true }),
@@ -44,6 +49,7 @@ export const task = pgTable(
     index("task_parent_task_id_idx").on(t.parentTaskId),
     index("task_status_id_idx").on(t.statusId),
     index("task_pinned_to_list_idx").on(t.listId, t.isPinnedToList),
+    index("task_deleted_at_idx").on(t.workspaceId, t.deletedAt).where(sql`${t.deletedAt} IS NOT NULL`),
   ],
 );
 

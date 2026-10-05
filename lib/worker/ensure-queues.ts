@@ -37,6 +37,11 @@ export const QUEUE_OPTIONS: Record<
     policy: "exclusive",
     retryLimit: 2,
   },
+  [JOB_NAMES.TRASH_AUTO_PURGE]: {
+    expireInSeconds: 900,
+    policy: "exclusive",
+    retryLimit: 0,
+  },
   [JOB_NAMES.NOTIFICATION_CLEANUP]: {
     expireInSeconds: 300,
     policy: "exclusive",

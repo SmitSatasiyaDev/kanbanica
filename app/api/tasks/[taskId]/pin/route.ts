@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { list, task } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canAccessSpace } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 import { isTaskPinned, pinTask, unpinTask } from "@/server/pinned-task";
 
 // GET /api/tasks/:taskId/pin — check if pinned by current user
@@ -30,7 +31,7 @@ async function resolveTask(taskId: string) {
       listId: task.listId,
     })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   if (!row) {
     return null;
