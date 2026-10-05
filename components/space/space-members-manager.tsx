@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   addSpaceMember,
@@ -9,6 +9,7 @@ import {
   removeSpaceMember,
 } from "@/app/actions/space";
 import { UserAvatar } from "@/components/common/user-avatar";
+import { MemberSearchInput } from "@/components/task/member-search-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { filterMembersByQuery } from "@/lib/member-search";
 
 type SpacePermission = "FULL_ACCESS" | "EDIT" | "VIEW";
 
@@ -81,12 +83,31 @@ export function SpaceMembersManager({
   const [pending, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [memberSelectOpen, setMemberSelectOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const memberSearchRef = useRef<HTMLInputElement>(null);
   const [selectedPermission, setSelectedPermission] =
     useState<SpacePermission>("VIEW");
 
   const existingUserIds = new Set(members.map((m) => m.userId));
   const addableMembers = workspaceMembers.filter(
     (m) => !existingUserIds.has(m.userId)
+  );
+
+  // Fresh search each time the member list opens; focus the field once the
+  // Select has finished moving focus to its first option.
+  useEffect(() => {
+    if (!memberSelectOpen) {
+      setMemberSearch("");
+      return;
+    }
+    const id = setTimeout(() => memberSearchRef.current?.focus(), 0);
+    return () => clearTimeout(id);
+  }, [memberSelectOpen]);
+
+  const filteredAddableMembers = filterMembersByQuery(
+    addableMembers,
+    memberSearch
   );
 
   function handleAdd() {
@@ -162,27 +183,54 @@ export function SpaceMembersManager({
               <div className="space-y-1.5">
                 <Label>Workspace member</Label>
                 <Select
+                  onOpenChange={setMemberSelectOpen}
                   onValueChange={setSelectedUserId}
+                  open={memberSelectOpen}
                   value={selectedUserId}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a member…" />
                   </SelectTrigger>
                   <SelectContent className="p-1.5">
-                    {addableMembers.map((m) => (
-                      <SelectItem key={m.userId} value={m.userId}>
-                        <span className="flex min-w-0 items-baseline gap-2">
-                          <span className="shrink-0">
-                            {m.name?.trim() || m.email}
-                          </span>
-                          {m.name?.trim() && (
-                            <span className="truncate text-base-content/60 text-xs">
-                              {m.email}
+                    <MemberSearchInput
+                      autoFocus={false}
+                      inputRef={memberSearchRef}
+                      onChange={setMemberSearch}
+                      // The Select swallows Space/Enter and type-to-navigate keys;
+                      // keep them in the field. Arrows still hand off to the list.
+                      onKeyDown={(e) => {
+                        if (
+                          e.key !== "ArrowDown" &&
+                          e.key !== "ArrowUp" &&
+                          e.key !== "Escape" &&
+                          e.key !== "Tab"
+                        ) {
+                          e.stopPropagation();
+                        }
+                      }}
+                      value={memberSearch}
+                    />
+                    <div className="max-h-60 overflow-y-auto">
+                      {filteredAddableMembers.length === 0 && (
+                        <p className="px-3 py-2 text-base-content/60 text-xs">
+                          No members found
+                        </p>
+                      )}
+                      {filteredAddableMembers.map((m) => (
+                        <SelectItem key={m.userId} value={m.userId}>
+                          <span className="flex min-w-0 items-baseline gap-2">
+                            <span className="shrink-0">
+                              {m.name?.trim() || m.email}
                             </span>
-                          )}
-                        </span>
-                      </SelectItem>
-                    ))}
+                            {m.name?.trim() && (
+                              <span className="truncate text-base-content/60 text-xs">
+                                {m.email}
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </div>
                   </SelectContent>
                 </Select>
               </div>

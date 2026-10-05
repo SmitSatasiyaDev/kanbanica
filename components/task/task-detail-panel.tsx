@@ -58,6 +58,7 @@ import {
 import { ManageStatusesDialog } from "@/components/list/manage-statuses-dialog";
 import { AttachmentPreviewProvider } from "@/components/task/attachment-preview-modal";
 import { CustomFieldEditor } from "@/components/task/custom-field-editors";
+import { MemberSearchInput } from "@/components/task/member-search-input";
 import {
   TaskActivityFeed,
   type TaskActivityFeedHandle,
@@ -108,6 +109,7 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { InviteMemberModal } from "@/components/workspace/invite-member-modal";
 import { flashDuplicatedTask } from "@/lib/duplicate-highlight";
+import { filterMembersByQuery } from "@/lib/member-search";
 import { toastWithUndo } from "@/lib/undo-toast";
 import { cn } from "@/lib/utils";
 
@@ -176,6 +178,72 @@ function userInitials(name: string | null, email: string | null) {
       .slice(0, 2);
   }
   return (email ?? "?").slice(0, 2).toUpperCase();
+}
+
+// ─── Assignee member picker ──────────────────────────────────────────────────
+
+function AssigneeMemberPicker({
+  members,
+  assignees,
+  onToggle,
+  onInvite,
+}: {
+  members: { userId: string | null; name: string; email: string }[];
+  assignees: { userId: string | null }[];
+  onToggle: (userId: string) => void | Promise<void>;
+  onInvite: () => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const filtered = filterMembersByQuery(members, search);
+  return (
+    <>
+      <p className="text-xs font-medium text-base-content/60 mb-1.5 px-1">
+        Select members
+      </p>
+      <MemberSearchInput onChange={setSearch} value={search} />
+      <div className="space-y-0.5 max-h-48 overflow-y-auto">
+        {filtered.length === 0 && (
+          <p className="px-2 py-1.5 text-xs text-base-content/60">
+            No members found
+          </p>
+        )}
+        {filtered.map((m) => {
+          const isAssigned = assignees.some((a) => a.userId === m.userId);
+          return (
+            <button
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-base-200"
+              key={m.userId}
+              onClick={() => onToggle(m.userId!)}
+              type="button"
+            >
+              <Avatar className="size-6 shrink-0">
+                <AvatarFallback className="text-2xs">
+                  {userInitials(m.name, m.email)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="flex-1 truncate text-left">
+                {m.name || m.email}
+              </span>
+              {isAssigned && (
+                <CheckIcon className="size-3.5 text-primary shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <Separator className="my-1.5" />
+      <button
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-base-content/60 hover:bg-base-200 hover:text-base-content"
+        onClick={onInvite}
+        type="button"
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-base-300">
+          <UserPlusIcon className="size-3.5" />
+        </span>
+        <span className="flex-1 truncate text-left">Invite member</span>
+      </button>
+    </>
+  );
 }
 
 // ─── Main panel ──────────────────────────────────────────────────────────────
@@ -877,52 +945,15 @@ export function TaskDetailPanel({
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-64 p-2">
-                  <p className="text-xs font-medium text-base-content/60 mb-1.5 px-1">
-                    Select members
-                  </p>
-                  <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                    {members.map((m) => {
-                      const isAssigned = assignees.some(
-                        (a) => a.userId === m.userId
-                      );
-                      return (
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-base-200"
-                          key={m.userId}
-                          onClick={() => handleToggleAssignee(m.userId!)}
-                          type="button"
-                        >
-                          <Avatar className="size-6 shrink-0">
-                            <AvatarFallback className="text-2xs">
-                              {userInitials(m.name, m.email)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="flex-1 truncate text-left">
-                            {m.name || m.email}
-                          </span>
-                          {isAssigned && (
-                            <CheckIcon className="size-3.5 text-primary shrink-0" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <Separator className="my-1.5" />
-                  <button
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                    onClick={() => {
+                  <AssigneeMemberPicker
+                    assignees={assignees}
+                    members={members}
+                    onInvite={() => {
                       setMobileAssigneePopoverOpen(false);
                       setInviteOpen(true);
                     }}
-                    type="button"
-                  >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-base-300">
-                      <UserPlusIcon className="size-3.5" />
-                    </span>
-                    <span className="flex-1 truncate text-left">
-                      Invite member
-                    </span>
-                  </button>
+                    onToggle={handleToggleAssignee}
+                  />
                 </PopoverContent>
               </Popover>
             </div>
@@ -1225,49 +1256,12 @@ export function TaskDetailPanel({
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-56 p-2">
-                    <p className="text-xs font-medium text-base-content/60 mb-1.5 px-1">
-                      Select members
-                    </p>
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                      {members.map((m) => {
-                        const isAssigned = assignees.some(
-                          (a) => a.userId === m.userId
-                        );
-                        return (
-                          <button
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-base-200"
-                            key={m.userId}
-                            onClick={() => handleToggleAssignee(m.userId!)}
-                            type="button"
-                          >
-                            <Avatar className="size-6 shrink-0">
-                              <AvatarFallback className="text-2xs">
-                                {userInitials(m.name, m.email)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="flex-1 truncate text-left">
-                              {m.name || m.email}
-                            </span>
-                            {isAssigned && (
-                              <CheckIcon className="size-3.5 text-primary shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <Separator className="my-1.5" />
-                    <button
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                      onClick={() => setInviteOpen(true)}
-                      type="button"
-                    >
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-base-300">
-                        <UserPlusIcon className="size-3.5" />
-                      </span>
-                      <span className="flex-1 truncate text-left">
-                        Invite member
-                      </span>
-                    </button>
+                    <AssigneeMemberPicker
+                      assignees={assignees}
+                      members={members}
+                      onInvite={() => setInviteOpen(true)}
+                      onToggle={handleToggleAssignee}
+                    />
                   </PopoverContent>
                 </Popover>
               </div>

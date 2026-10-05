@@ -22,6 +22,7 @@ import {
 import { createTag, getWorkspaceTags } from "@/app/actions/task-tag";
 import { UserAvatar } from "@/components/common/user-avatar";
 import { ManageStatusesDialog } from "@/components/list/manage-statuses-dialog";
+import { MemberSearchInput } from "@/components/task/member-search-input";
 import { TaskDescriptionEditor } from "@/components/task/task-description-editor";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -44,6 +45,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useNoteImageUpload } from "@/hooks/use-note-image-upload";
+import { filterMembersByQuery } from "@/lib/member-search";
 import { tiptapHasContent } from "@/lib/notes";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +136,7 @@ export function CreateTaskModal({
     { id: string; name: string; color: string }[]
   >([]);
   const [tagSearch, setTagSearch] = React.useState("");
+  const [memberSearch, setMemberSearch] = React.useState("");
 
   React.useEffect(() => {
     if (open) {
@@ -460,7 +463,12 @@ export function CreateTaskModal({
 
               {/* Assignee */}
               <Popover
-                onOpenChange={setAssigneePopoverOpen}
+                onOpenChange={(o) => {
+                  setAssigneePopoverOpen(o);
+                  if (!o) {
+                    setMemberSearch("");
+                  }
+                }}
                 open={assigneePopoverOpen}
               >
                 <PopoverTrigger asChild>
@@ -499,8 +507,18 @@ export function CreateTaskModal({
                   <p className="text-xs text-base-content/60 px-1 mb-1.5">
                     Select members
                   </p>
+                  <MemberSearchInput
+                    onChange={setMemberSearch}
+                    value={memberSearch}
+                  />
                   <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                    {members.map((m) => {
+                    {filterMembersByQuery(members, memberSearch).length ===
+                      0 && (
+                      <p className="px-2 py-1.5 text-xs text-base-content/60">
+                        No members found
+                      </p>
+                    )}
+                    {filterMembersByQuery(members, memberSearch).map((m) => {
                       const selected = assigneeIds.includes(m.userId);
                       return (
                         <button
