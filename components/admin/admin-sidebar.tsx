@@ -5,6 +5,7 @@ import {
   BuildingsIcon,
   ChartBarIcon,
   EnvelopeIcon,
+  GearSixIcon,
   ListIcon,
   PlugsIcon,
   ScrollIcon,
@@ -34,6 +35,7 @@ const ORBIT_NAV_ITEMS = [
   { href: "/orbit/email", label: "Email", icon: EnvelopeIcon },
   { href: "/orbit/queues", label: "Queues", icon: StackIcon },
   { href: "/orbit/integrations", label: "Integrations", icon: PlugsIcon },
+  { href: "/orbit/settings", label: "Settings", icon: GearSixIcon },
 ];
 
 interface AdminSidebarProps {

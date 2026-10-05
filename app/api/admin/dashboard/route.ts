@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auditLogs, supportTicket, task, user, workspace } from "@/db/schema";
 import { getAdminSession } from "@/lib/admin-auth";
 import { db } from "@/lib/db";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function GET() {
   const session = await getAdminSession();
@@ -29,7 +30,7 @@ export async function GET() {
   ] = await Promise.all([
     db.select({ count: count() }).from(user),
     db.select({ count: count() }).from(workspace),
-    db.select({ count: count() }).from(task),
+    db.select({ count: count() }).from(task).where(notDeleted()),
     db
       .select({ count: count() })
       .from(supportTicket)

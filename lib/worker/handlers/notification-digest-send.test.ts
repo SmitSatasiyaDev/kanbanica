@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleNotificationDigestSend } from "@/lib/worker/handlers/notification-digest-send";
 
-const { selectMock, enqueueEmailMock } = vi.hoisted(() => ({
+const { selectMock, enqueueEmailMock, emailsEnabledMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   enqueueEmailMock: vi.fn(),
+  emailsEnabledMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ db: { select: selectMock } }));
+vi.mock("@/lib/integration-settings", () => ({
+  areNotificationEmailsEnabled: emailsEnabledMock,
+}));
 vi.mock("@/lib/email/index", () => ({ enqueueEmail: enqueueEmailMock }));
 
 interface QueryChain extends PromiseLike<unknown[]> {
@@ -49,9 +53,19 @@ function job(userId = "u1") {
 beforeEach(() => {
   selectMock.mockReset();
   enqueueEmailMock.mockReset();
+  emailsEnabledMock.mockReset();
+  emailsEnabledMock.mockResolvedValue(true);
 });
 
 describe("handleNotificationDigestSend", () => {
+  it("sends nothing (and does no DB work) when the platform notification-email switch is off", async () => {
+    emailsEnabledMock.mockResolvedValue(false);
+    queueSelectResults([{ email: "u1@example.com", name: "User One" }]);
+    await handleNotificationDigestSend([job()]);
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(enqueueEmailMock).not.toHaveBeenCalled();
+  });
+
   it("does nothing when the user doesn't exist", async () => {
     queueSelectResults([]);
     await handleNotificationDigestSend([job()]);

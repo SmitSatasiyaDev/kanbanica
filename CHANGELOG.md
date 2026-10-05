@@ -30,6 +30,34 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-05
+
+### Added
+- **Trash for deleted tasks.** Deleting a task (or bulk-deleting) now moves it to a
+  workspace Trash instead of removing it. Owners and admins can restore tasks or
+  delete them forever from the user menu → Trash; tasks left in the Trash for 30
+  days are purged automatically. Trashed tasks still count toward the workspace
+  task limit until permanently deleted. See `docs/trash.md`.
+- Platform-wide switch to turn notification emails on or off (Orbit → Settings →
+  Notifications). Magic-link, invite and password-reset emails are unaffected.
+- Member search in the assignee pickers, and an Orbit Settings landing page.
+- Each subtask row on Board cards shows a status dot with the subtask's own
+  status name on hover.
+- Web Push: server-side VAPID key generation in Integrations settings.
+
+### Changed
+- Invite links: the invite page and post-auth handling were reworked so logged-out
+  and mismatched-account visitors land in the right place.
+- Web Push VAPID subject is normalized when saved.
+
+### Fixed
+- **Sprint auto-close never ran** — the job is now registered and scheduled.
+- The comment composer no longer grows without bound on large pastes.
+
+### Upgrade notes
+- Two new database migrations (task trash, notification-email toggle) are applied
+  automatically on start. No environment variable changes.
+
 ## [0.3.0] - 2026-10-02
 
 ### Added

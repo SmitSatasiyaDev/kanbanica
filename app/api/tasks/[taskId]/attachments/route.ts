@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { list, task, taskAssignee, taskAttachment } from "@/db/schema";
@@ -11,6 +11,7 @@ import { canAccessSpace, getWorkspaceMembership } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { MAX_FILE_SIZE, storage } from "@/lib/storage";
+import { notDeleted } from "@/lib/task-visibility";
 
 async function resolveTask(taskId: string) {
   const [row] = await db
@@ -22,7 +23,7 @@ async function resolveTask(taskId: string) {
     })
     .from(task)
     .innerJoin(list, eq(task.listId, list.id))
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   return row ?? null;
 }

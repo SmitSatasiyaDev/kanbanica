@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Job } from "pg-boss";
 import { userEmailPreference } from "@/db/schema";
 import { db } from "@/lib/db";
+import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import { enqueueJob } from "@/lib/worker/enqueue";
 import { JOB_NAMES } from "@/lib/worker/job-types";
 
@@ -52,6 +53,13 @@ export function localTime(
 export async function handleNotificationDigestScan(
   _jobs: Job<Record<string, never>>[]
 ) {
+  // Platform master switch is off: queue nothing. Each digest covers a fixed
+  // 30-minute window, so skipped windows are simply dropped — turning email
+  // back on never sends a backlog.
+  if (!(await areNotificationEmailsEnabled())) {
+    return;
+  }
+
   const now = new Date();
 
   // Get all users with digest delivery mode

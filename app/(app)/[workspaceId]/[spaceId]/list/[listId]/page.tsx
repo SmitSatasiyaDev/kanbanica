@@ -34,6 +34,7 @@ import {
   getWorkspaceMembership,
   hasPermissionLevel,
 } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 import { ListContainer } from "./_components/list-container";
 
 interface ListPageProps {
@@ -150,6 +151,7 @@ export default async function ListPage({ params }: ListPageProps) {
       .where(
         and(
           eq(task.listId, listId),
+          notDeleted(),
           eq(task.isArchived, false),
           isNull(task.parentTaskId)
         )
@@ -234,7 +236,7 @@ export default async function ListPage({ params }: ListPageProps) {
           .from(taskDependency)
           .innerJoin(task, eq(taskDependency.dependsOnTaskId, task.id))
           .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-          .where(inArray(taskDependency.taskId, taskIds))
+          .where(and(inArray(taskDependency.taskId, taskIds), notDeleted()))
       : Promise.resolve([]),
 
     // Total completed tracked seconds per task (running timers excluded — the
@@ -266,7 +268,11 @@ export default async function ListPage({ params }: ListPageProps) {
           })
           .from(task)
           .where(
-            and(inArray(task.parentTaskId, taskIds), eq(task.isArchived, false))
+            and(
+              inArray(task.parentTaskId, taskIds),
+              notDeleted(),
+              eq(task.isArchived, false)
+            )
           )
           .groupBy(task.parentTaskId)
       : Promise.resolve([]),

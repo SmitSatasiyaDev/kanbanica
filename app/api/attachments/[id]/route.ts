@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { list, task, taskAttachment } from "@/db/schema";
@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canAccessSpace, getWorkspaceMembership } from "@/lib/permissions";
 import { storage } from "@/lib/storage";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function DELETE(
   _request: NextRequest,
@@ -37,7 +38,7 @@ export async function DELETE(
     .select({ workspaceId: task.workspaceId, spaceId: list.spaceId })
     .from(task)
     .innerJoin(list, eq(task.listId, list.id))
-    .where(eq(task.id, attachment.taskId))
+    .where(and(eq(task.id, attachment.taskId), notDeleted()))
     .limit(1);
 
   if (!ctx) {

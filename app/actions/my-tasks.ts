@@ -16,6 +16,7 @@ import {
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAccessibleSpaceIds } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 
 export interface MyTask {
   dueDateEnd: Date | null;
@@ -127,6 +128,7 @@ export async function getMyTasks(options?: {
       and(
         inArray(task.id, taskIds),
         inArray(space.id, accessibleSpaceIds),
+        notDeleted(),
         eq(task.isArchived, false),
         eq(list.isArchived, false)
       )

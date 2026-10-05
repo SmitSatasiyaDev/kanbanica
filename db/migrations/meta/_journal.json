@@ -197,6 +197,20 @@
       "when": 1790920515421,
       "tag": "0027_workspace_invite_link_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791189102760,
+      "tag": "0028_notification_emails_toggle",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791194550114,
+      "tag": "0029_task_trash",
+      "breakpoints": true
     }
   ]
 }

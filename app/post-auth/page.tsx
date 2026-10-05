@@ -18,16 +18,17 @@ export default async function PostAuthPage() {
     redirect("/login");
   }
 
+  // A logged-out visitor's `/invite/<token>` was stashed across login — go back
+  // to it. This runs BEFORE the name step: the invite page shows the invitation
+  // first and asks for the name only as its "Create account & join" step.
+  if (await readPendingInvite()) {
+    redirect("/api/invite/consume");
+  }
+
   // First-time users (no display name) set one before any invite is
   // auto-accepted / link join is consumed; the form returns here afterwards.
   if (!(await userHasDisplayName(session.user.id))) {
     redirect(completeProfileUrl("/post-auth"));
-  }
-
-  // A logged-out visitor's `/invite/<token>` was stashed across login — go back
-  // to it (after the name step above; the invite page does the accepting).
-  if (await readPendingInvite()) {
-    redirect("/api/invite/consume");
   }
 
   // Auto-accept any invitations addressed to this user's email so invited users

@@ -81,6 +81,7 @@ import {
   useAttachmentPreview,
 } from "@/components/task/attachment-preview-modal";
 import { CustomFieldEditor } from "@/components/task/custom-field-editors";
+import { MemberSearchInput } from "@/components/task/member-search-input";
 import { SubtaskRow } from "@/components/task/subtask-row";
 import {
   TaskActivityFeed,
@@ -135,6 +136,7 @@ import { InviteMemberModal } from "@/components/workspace/invite-member-modal";
 import { useTaskNavShortcut } from "@/hooks/use-task-nav-shortcut";
 import { useTaskNavigation } from "@/hooks/use-task-navigation";
 import { flashDuplicatedTask } from "@/lib/duplicate-highlight";
+import { filterMembersByQuery } from "@/lib/member-search";
 import { useSetTopbar } from "@/lib/topbar-context";
 import { toastWithUndo } from "@/lib/undo-toast";
 import { cn } from "@/lib/utils";
@@ -387,11 +389,19 @@ function AssigneePickerContent({
   onToggle: (userId: string) => void;
   onInvite: () => void;
 }) {
+  const [search, setSearch] = React.useState("");
+  const filtered = filterMembersByQuery(members, search);
   return (
     <>
       <p className="text-xs text-base-content/60 px-1 mb-1.5">Select members</p>
+      <MemberSearchInput onChange={setSearch} value={search} />
       <div className="space-y-0.5 max-h-48 overflow-y-auto">
-        {members.map((m) => {
+        {filtered.length === 0 && (
+          <p className="px-2 py-1.5 text-xs text-base-content/60">
+            No members found
+          </p>
+        )}
+        {filtered.map((m) => {
           const selected = assignedUserIds.includes(m.userId);
           return (
             <button
@@ -1270,8 +1280,12 @@ export function TaskDetailPage({
 
   async function confirmDelete() {
     setDeleting(true);
-    await deleteTask(workspaceId, spaceId, listId, taskId);
+    const res = await deleteTask(workspaceId, spaceId, listId, taskId);
     setDeleting(false);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     router.push(backUrl);
   }
 
@@ -1280,9 +1294,18 @@ export function TaskDetailPage({
       return;
     }
     setDeletingSubtaskBusy(true);
-    await deleteTask(workspaceId, spaceId, listId, deletingSubtask.id);
+    const res = await deleteTask(
+      workspaceId,
+      spaceId,
+      listId,
+      deletingSubtask.id
+    );
     setDeletingSubtaskBusy(false);
     setDeletingSubtask(null);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     load();
   }
 
@@ -3038,7 +3061,7 @@ export function TaskDetailPage({
                 Delete Task
               </DialogTitle>
               <p className="text-sm text-base-content/60 mt-1">
-                This action cannot be undone.
+                The task moves to Trash. A workspace admin can restore it.
               </p>
             </div>
           </div>
@@ -3077,9 +3100,9 @@ export function TaskDetailPage({
               </DialogTitle>
               <p className="text-sm text-base-content/60 mt-1">
                 {deletingSubtask
-                  ? `"${deletingSubtask.title}" will be permanently deleted.`
+                  ? `"${deletingSubtask.title}" will move to Trash.`
                   : ""}{" "}
-                This action cannot be undone.
+                A workspace admin can restore it.
               </p>
             </div>
           </div>

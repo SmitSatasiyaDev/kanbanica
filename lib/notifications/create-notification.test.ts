@@ -13,6 +13,7 @@ const {
   enqueueEmailMock,
   notificationTemplateMock,
   isSmtpConfiguredMock,
+  emailsEnabledMock,
 } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   insertMock: vi.fn(),
@@ -22,6 +23,7 @@ const {
   enqueueEmailMock: vi.fn(),
   notificationTemplateMock: vi.fn(),
   isSmtpConfiguredMock: vi.fn(),
+  emailsEnabledMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ db: { select: selectMock, insert: insertMock } }));
@@ -32,6 +34,9 @@ vi.mock("@/lib/notifications/push", () => ({
 vi.mock("@/lib/email", () => ({ enqueueEmail: enqueueEmailMock }));
 vi.mock("@/lib/email/templates/notification", () => ({
   notificationTemplate: notificationTemplateMock,
+}));
+vi.mock("@/lib/integration-settings", () => ({
+  areNotificationEmailsEnabled: emailsEnabledMock,
 }));
 vi.mock("@/lib/smtp/client", () => ({
   isSmtpConfigured: isSmtpConfiguredMock,
@@ -106,6 +111,8 @@ beforeEach(() => {
   enqueueEmailMock.mockReset();
   notificationTemplateMock.mockReset();
   isSmtpConfiguredMock.mockReset();
+  emailsEnabledMock.mockReset();
+  emailsEnabledMock.mockResolvedValue(true);
   stubInsert();
   isSmtpConfiguredMock.mockReturnValue(false);
   notificationTemplateMock.mockResolvedValue({
@@ -232,6 +239,20 @@ describe("createNotifications", () => {
     expect(enqueueEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({ to: "u1@example.com", subject: "Title" })
     );
+  });
+
+  it("sends no email when the platform notification-email switch is off, but still creates the in-app notification", async () => {
+    isSmtpConfiguredMock.mockReturnValue(true);
+    emailsEnabledMock.mockResolvedValue(false);
+    queueSelectResults(
+      [],
+      [],
+      [{ id: "u1", email: "u1@example.com", deliveryMode: null }]
+    );
+    createNotifications(baseParams({ triggerType: "task_assigned" }));
+    await flush();
+    expect(insertValuesSpy).toHaveBeenCalledTimes(1);
+    expect(enqueueEmailMock).not.toHaveBeenCalled();
   });
 
   it("does not attempt email for a non-high-signal trigger with no explicit preference", async () => {

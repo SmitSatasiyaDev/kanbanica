@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { and, eq, inArray } from "drizzle-orm";
 import { listStatus, sprint, task, taskSprint } from "@/db/schema";
 import { db } from "@/lib/db";
+import { notDeleted } from "@/lib/task-visibility";
 
 // Shared sprint close + rollover logic, driven by space-level settings.
 //
@@ -84,7 +85,13 @@ export async function closeSprintAndRollover(params: {
     .from(taskSprint)
     .innerJoin(task, eq(taskSprint.taskId, task.id))
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
-    .where(and(eq(taskSprint.sprintId, sprintId), eq(task.isArchived, false)));
+    .where(
+      and(
+        eq(taskSprint.sprintId, sprintId),
+        notDeleted(),
+        eq(task.isArchived, false)
+      )
+    );
 
   const incompleteTaskIds = sprintTasks
     .filter((t) => t.statusType !== "CLOSED")

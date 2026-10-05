@@ -23,6 +23,7 @@ import {
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { storage } from "@/lib/storage";
+import { notDeleted } from "@/lib/task-visibility";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -273,7 +274,7 @@ export async function createComment(
   const [taskRow] = await db
     .select({ title: task.title })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
   const taskTitle = taskRow?.title ?? "Task";
 
@@ -628,7 +629,7 @@ export async function resolveComment(
       const [taskRow] = await db
         .select({ title: task.title })
         .from(task)
-        .where(eq(task.id, resolved.taskId))
+        .where(and(eq(task.id, resolved.taskId), notDeleted()))
         .limit(1);
       const actorName = session.user.name ?? session.user.email ?? "Someone";
       createNotifications({

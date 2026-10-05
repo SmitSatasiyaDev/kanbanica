@@ -10,6 +10,7 @@ import {
   getSpacePermission,
   getWorkspaceMembership,
 } from "@/lib/permissions";
+import { notDeleted } from "@/lib/task-visibility";
 import { TaskDetailPage } from "./_components/task-detail-page";
 
 interface TaskPageProps {
@@ -23,7 +24,7 @@ export async function generateMetadata({
   const row = await db
     .select({ title: task.title })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1)
     .then((r) => r[0]);
   if (!row) {
@@ -59,7 +60,7 @@ export default async function TaskPage({ params }: TaskPageProps) {
       workspaceId: task.workspaceId,
     })
     .from(task)
-    .where(eq(task.id, taskId))
+    .where(and(eq(task.id, taskId), notDeleted()))
     .limit(1);
 
   if (!t || t.workspaceId !== workspaceId) {

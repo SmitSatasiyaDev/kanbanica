@@ -1487,7 +1487,7 @@ function BulkActionBar({
                 Delete {count} Task{count > 1 ? "s" : ""}
               </DialogTitle>
               <p className="text-sm text-base-content/60 mt-1">
-                This action cannot be undone.
+                The tasks move to Trash. A workspace admin can restore them.
               </p>
             </div>
           </div>

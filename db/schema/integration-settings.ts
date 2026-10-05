@@ -1,4 +1,10 @@
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 // Admin-configurable alternative to the optional env vars in lib/env.ts
 // (SMTP, Google OAuth, S3/R2 storage, Web Push) — set from the setup wizard
@@ -39,6 +45,13 @@ export const integrationSettings = pgTable("integration_settings", {
   vapidPublicKey: text("vapid_public_key"),
   vapidSubject: text("vapid_subject"),
   vapidPrivateKeyEncrypted: text("vapid_private_key_encrypted"),
+
+  // Platform-wide master switch for *notification* email (instant + digest).
+  // Auth/transactional mail (magic link, invites, …) is never affected. No env
+  // fallback — default on, so existing deployments behave as before.
+  notificationEmailsEnabled: boolean("notification_emails_enabled")
+    .notNull()
+    .default(true),
 
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

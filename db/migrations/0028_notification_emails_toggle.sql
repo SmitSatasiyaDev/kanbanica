@@ -1,0 +1,1 @@
+ALTER TABLE "integration_settings" ADD COLUMN "notification_emails_enabled" boolean DEFAULT true NOT NULL;

@@ -3,8 +3,13 @@
 import { BellIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { saveIntegrationSettingsAction } from "@/app/actions/integrations";
+import {
+  generateVapidKeysAction,
+  saveIntegrationSettingsAction,
+} from "@/app/actions/integrations";
 import { PasswordInput } from "@/components/common/password-input";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { IntegrationSettingsSummary } from "@/lib/integration-settings";
@@ -36,6 +41,8 @@ export function WebPushSettingsForm({
   const [hasPrivateKey, setHasPrivateKey] = useState(initial.hasPrivateKey);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const dbConfigured = !!(publicKey && subject && hasPrivateKey);
   const usingEnv = !dbConfigured && resolvedConfigured;
@@ -69,6 +76,37 @@ export function WebPushSettingsForm({
       toast.error("Network error. Please try again.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runGenerate() {
+    setGenerating(true);
+    try {
+      const result = await generateVapidKeysAction({ subject });
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      setPublicKey(result.publicKey);
+      setSubject(result.subject);
+      setPrivateKey("");
+      setHasPrivateKey(true);
+      setConfirmOpen(false);
+      toast.success("New VAPID keys generated and saved.");
+      onSaved?.(true);
+    } catch {
+      toast.error("Network error. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleGenerate() {
+    // Regenerating invalidates existing subscriptions — confirm when keys exist.
+    if (dbConfigured || resolvedConfigured) {
+      setConfirmOpen(true);
+    } else {
+      runGenerate();
     }
   }
 
@@ -143,6 +181,51 @@ export function WebPushSettingsForm({
           value={privateKey}
         />
       </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-base-content/60">
+          Or generate a new pair automatically — it is saved immediately.
+        </p>
+        <Button
+          disabled={saving || generating}
+          onClick={handleGenerate}
+          type="button"
+          variant="outline"
+        >
+          {generating ? "Generating…" : "Generate keys"}
+        </Button>
+      </div>
+      <Dialog onOpenChange={setConfirmOpen} open={confirmOpen}>
+        <DialogContent className="min-w-0 text-center sm:max-w-sm">
+          <div className="flex min-w-0 flex-col items-center gap-3 pt-2">
+            <div className="min-w-0 w-full">
+              <DialogTitle className="text-base font-bold">
+                Generate new keys?
+              </DialogTitle>
+              <p className="mt-1 w-full whitespace-normal break-words text-sm text-base-content/60">
+                This replaces the current key pair. Everyone who enabled push
+                notifications will need to re-enable them in their browser.
+              </p>
+            </div>
+          </div>
+          <div className="mt-2 flex min-w-0 gap-2">
+            <Button
+              className="flex-1"
+              disabled={generating}
+              onClick={() => setConfirmOpen(false)}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={generating}
+              onClick={runGenerate}
+            >
+              {generating ? "Generating…" : "Generate"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </IntegrationCard>
   );
 }

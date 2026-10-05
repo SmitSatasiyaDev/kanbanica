@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { userNotificationPreference } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import {
   emailDefaultFor,
   NOTIFICATION_TRIGGERS,
@@ -47,7 +48,13 @@ export async function GET(_req: NextRequest) {
 
   // Additive: lets the settings page show the email controls only when email
   // can actually be delivered. Existing clients ignore it.
-  return NextResponse.json({ preferences, smtpConfigured: isSmtpConfigured() });
+  return NextResponse.json({
+    preferences,
+    smtpConfigured: isSmtpConfigured(),
+    // Platform master switch — the settings page disables the email controls
+    // when false. Stored preferences are never touched.
+    notificationEmailsEnabled: await areNotificationEmailsEnabled(),
+  });
 }
 
 export async function PATCH(req: NextRequest) {

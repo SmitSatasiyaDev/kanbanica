@@ -3,6 +3,7 @@
 import { and, count, eq, max } from "drizzle-orm";
 import { task } from "@/db/schema";
 import { db } from "@/lib/db";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function pinTaskToList(
   taskId: string,
@@ -12,7 +13,7 @@ export async function pinTaskToList(
     const [t] = await tx
       .select({ listId: task.listId })
       .from(task)
-      .where(eq(task.id, taskId))
+      .where(and(eq(task.id, taskId), notDeleted()))
       .limit(1);
 
     if (!t?.listId) {
@@ -22,7 +23,13 @@ export async function pinTaskToList(
     const [{ pinCount }] = await tx
       .select({ pinCount: count() })
       .from(task)
-      .where(and(eq(task.listId, t.listId), eq(task.isPinnedToList, true)));
+      .where(
+        and(
+          eq(task.listId, t.listId),
+          eq(task.isPinnedToList, true),
+          notDeleted()
+        )
+      );
 
     if (pinCount >= 5) {
       return {
@@ -34,7 +41,13 @@ export async function pinTaskToList(
     const [{ maxOrder }] = await tx
       .select({ maxOrder: max(task.pinnedToListOrder) })
       .from(task)
-      .where(and(eq(task.listId, t.listId), eq(task.isPinnedToList, true)));
+      .where(
+        and(
+          eq(task.listId, t.listId),
+          eq(task.isPinnedToList, true),
+          notDeleted()
+        )
+      );
 
     await tx
       .update(task)

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import webpush from "web-push";
+import { pushSubscription } from "@/db/schema";
 import { integrationSettings } from "@/db/schema/integration-settings";
 import { audit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/authz";
@@ -44,6 +46,7 @@ function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
 
 interface SaveInput {
   google?: { clientId?: unknown; clientSecret?: unknown };
+  notifications?: { emailsEnabled?: unknown };
   smtp?: {
     host?: unknown;
     port?: unknown;
@@ -64,7 +67,7 @@ interface SaveInput {
 }
 
 /**
- * Partial update, one section (smtp/google/storage/webPush) at a time.
+ * Partial update, one section (smtp/google/storage/webPush/notifications) at a time.
  * Within a section: key omitted = unchanged, "" = clear, non-empty = set
  * (encrypted for secret fields).
  */
@@ -136,6 +139,19 @@ export async function saveIntegrationSettingsAction(
   }
 
   if (body.webPush) {
+    if (
+      typeof body.webPush.subject === "string" &&
+      body.webPush.subject.trim()
+    ) {
+      const normalized = normalizeVapidSubject(body.webPush.subject);
+      if (!normalized) {
+        return {
+          error:
+            "Subject must be an email address, mailto: address or https:// URL.",
+        };
+      }
+      body.webPush.subject = normalized;
+    }
     Object.assign(
       updates,
       compact({
@@ -145,6 +161,16 @@ export async function saveIntegrationSettingsAction(
       })
     );
     auditSections.push("webPush");
+  }
+
+  if (body.notifications) {
+    if (typeof body.notifications.emailsEnabled !== "boolean") {
+      return { error: "Invalid notification email setting." };
+    }
+    updates.notificationEmailsEnabled = body.notifications.emailsEnabled;
+    auditSections.push(
+      `notifications (emails ${body.notifications.emailsEnabled ? "on" : "off"})`
+    );
   }
 
   if (auditSections.length === 0) {
@@ -267,4 +293,72 @@ export async function testStorageConnectionAction(
     accessKeyId: strOrUndefined(input.accessKeyId),
     secretAccessKey: secretAccessKey || undefined,
   });
+}
+
+/** web-push accepts only `mailto:` or `https://` subjects; a bare email gets the prefix. */
+function normalizeVapidSubject(raw: string): string | null {
+  const value = raw.trim();
+  if (/^https:\/\/\S+$/i.test(value) || /^mailto:\S+@\S+$/i.test(value)) {
+    return value;
+  }
+  return /^\S+@\S+\.\S+$/.test(value) ? `mailto:${value}` : null;
+}
+
+/**
+ * Generates a fresh VAPID key pair server-side and saves it (private key
+ * encrypted). Regenerating invalidates every existing browser subscription,
+ * so those rows are deleted — users re-subscribe with the new key. Returns
+ * only the public key + normalized subject; the private key never leaves
+ * the server.
+ */
+export async function generateVapidKeysAction(input: {
+  subject?: unknown;
+}): Promise<
+  { ok: true; publicKey: string; subject: string } | { error: string }
+> {
+  const admin = await requireAdmin();
+
+  const rawSubject =
+    typeof input.subject === "string" && input.subject.trim()
+      ? input.subject
+      : admin.user.email;
+  const subject = normalizeVapidSubject(rawSubject);
+  if (!subject) {
+    return {
+      error:
+        "Subject must be an email address, mailto: address or https:// URL.",
+    };
+  }
+
+  const keys = webpush.generateVAPIDKeys();
+  const now = new Date();
+  const values = {
+    vapidPublicKey: keys.publicKey,
+    vapidPrivateKeyEncrypted: encryptSecret(keys.privateKey),
+    vapidSubject: subject,
+  };
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(integrationSettings)
+      .values({ id: "default", ...values, updatedAt: now })
+      .onConflictDoUpdate({
+        target: integrationSettings.id,
+        set: { ...values, updatedAt: now },
+      });
+    await tx.delete(pushSubscription);
+  });
+
+  await audit({
+    action: "integration_settings.updated",
+    actorEmail: admin.user.email,
+    actorId: admin.user.id,
+    description: "Generated new Web Push (VAPID) keys",
+    entityId: "default",
+    entityType: "integration_settings",
+    metadata: { sections: ["webPush"], generated: true },
+  });
+
+  revalidatePath("/orbit/integrations");
+  return { ok: true, publicKey: keys.publicKey, subject };
 }

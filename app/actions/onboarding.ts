@@ -267,6 +267,7 @@ export async function createOnboardingSpace(input: {
         id: taskId,
         seqNumber: updated?.taskSeq ?? 1,
         workspaceId,
+        spaceId,
         listId,
         statusId: todoStatusId,
         title: `👋 Welcome to ${wsRow?.name ?? PRODUCT_NAME} — click to see how a task works`,

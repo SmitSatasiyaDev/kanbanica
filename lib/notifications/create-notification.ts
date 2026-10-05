@@ -12,6 +12,7 @@ import {
 import { db } from "@/lib/db";
 import { enqueueEmail } from "@/lib/email";
 import { notificationTemplate } from "@/lib/email/templates/notification";
+import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import { isSmtpConfigured } from "@/lib/smtp/client";
 import { pushToUser } from "@/lib/sse-clients";
 import { notificationSettingsUrl, notificationUrl } from "./links";
@@ -205,8 +206,14 @@ async function _create(params: CreateNotificationParams) {
   // Instant email. Skipped entirely when SMTP isn't configured, so an
   // unconfigured self-host never accumulates undeliverable outbox rows.
   // `digest` recipients are picked up later by the digest worker straight from
-  // the `notification` table; `off` recipients get nothing.
-  if (emailRecipients.length > 0 && (await isSmtpConfigured())) {
+  // the `notification` table; `off` recipients get nothing. Also skipped when
+  // the platform admin has turned notification email off (Orbit →
+  // Integrations) — in-app and push above are unaffected.
+  if (
+    emailRecipients.length > 0 &&
+    (await isSmtpConfigured()) &&
+    (await areNotificationEmailsEnabled())
+  ) {
     await sendInstantEmails({
       recipientIds: emailRecipients,
       workspaceId,

@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { db } from "@/lib/db";
 import { createNotifications } from "@/lib/notifications/create-notification";
+import { notDeleted } from "@/lib/task-visibility";
 
 export async function handleDueDateReminder(
   _jobs: Job<Record<string, never>>[]
@@ -33,6 +34,7 @@ export async function handleDueDateReminder(
       and(
         gte(task.dueDateEnd, tomorrowStart),
         lt(task.dueDateEnd, tomorrowEnd),
+        notDeleted(),
         eq(task.isArchived, false),
         not(eq(listStatus.type, "CLOSED"))
       )
@@ -47,6 +49,7 @@ export async function handleDueDateReminder(
       and(
         gte(task.dueDateEnd, todayStart),
         lt(task.dueDateEnd, todayEnd),
+        notDeleted(),
         eq(task.isArchived, false),
         not(eq(listStatus.type, "CLOSED"))
       )
@@ -61,6 +64,7 @@ export async function handleDueDateReminder(
       and(
         gte(task.dueDateEnd, yesterdayStart),
         lt(task.dueDateEnd, todayStart),
+        notDeleted(),
         eq(task.isArchived, false),
         not(eq(listStatus.type, "CLOSED"))
       )

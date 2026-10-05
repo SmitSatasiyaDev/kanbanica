@@ -587,9 +587,18 @@ export function TaskListRow({
 
   async function confirmDelete() {
     setDeleting(true);
-    await deleteTask(workspaceId, spaceId, effectiveListId, task.id);
+    const res = await deleteTask(
+      workspaceId,
+      spaceId,
+      effectiveListId,
+      task.id
+    );
     setDeleting(false);
     setDeleteOpen(false);
+    if ("error" in res) {
+      toast.error(res.error);
+      return;
+    }
     onRefresh();
   }
 
@@ -1327,7 +1336,7 @@ export function TaskListRow({
               <span className="font-medium text-base-content">
                 &ldquo;{task.title}&rdquo;
               </span>{" "}
-              will be permanently deleted and cannot be recovered.
+              will move to Trash. A workspace admin can restore it.
             </p>
           </div>
           <div className="flex gap-3 mt-1">

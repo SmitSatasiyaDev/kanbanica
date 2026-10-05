@@ -182,8 +182,18 @@ export async function isWebPushConfigured(): Promise<boolean> {
   return (await getWebPushSettings()) !== null;
 }
 
+/**
+ * Platform-wide master switch for notification email (instant + digest). Does
+ * not cover auth/transactional mail. True when the row was never written.
+ */
+export async function areNotificationEmailsEnabled(): Promise<boolean> {
+  const row = await getRow();
+  return row?.notificationEmailsEnabled ?? true;
+}
+
 export interface IntegrationSettingsSummary {
   google: { clientId: string; hasClientSecret: boolean };
+  notifications: { emailsEnabled: boolean };
   smtp: {
     host: string;
     port: number;
@@ -217,6 +227,7 @@ export interface IntegrationSettingsSummary {
 export async function getIntegrationSettingsSummary(): Promise<IntegrationSettingsSummary> {
   const row = await getRow();
   return {
+    notifications: { emailsEnabled: row?.notificationEmailsEnabled ?? true },
     smtp: {
       host: row?.smtpHost ?? "",
       port: row?.smtpPort ?? 587,
