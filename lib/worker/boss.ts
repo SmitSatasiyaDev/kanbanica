@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 import { sanitizeDatabaseUrl } from "@/lib/pg-connection";
 import { sleep } from "@/lib/utils";
 import { ensureJobQueues } from "@/lib/worker/ensure-queues";
-import { JOB_NAMES } from "@/lib/worker/job-types";
+import { JOB_NAMES, SPRINT_AUTO_CLOSE_CRON } from "@/lib/worker/job-types";
 
 // `ssl` must be passed explicitly: `pg` lets a parsed connection string override
 // its own `ssl` option, so `sslmode` is stripped from the URL instead.
@@ -99,12 +99,17 @@ export async function startWorker() {
   await boss.schedule(JOB_NAMES.EMAIL_OUTBOX_REAP, "*/15 * * * *", {});
   await boss.schedule(JOB_NAMES.EMAIL_EVENTS_PRUNE, "17 3 * * *", {});
   await boss.schedule(JOB_NAMES.SCAFFOLD_HEALTHCHECK, "*/10 * * * *", {});
-  await boss.schedule(JOB_NAMES.SPRINT_AUTO_CLOSE, "0 0 * * *", {});
+  await boss.schedule(JOB_NAMES.SPRINT_AUTO_CLOSE, SPRINT_AUTO_CLOSE_CRON, {});
   await boss.schedule(JOB_NAMES.NOTIFICATION_CLEANUP, "0 1 * * *", {});
   await boss.schedule(JOB_NAMES.DUE_DATE_REMINDER, "0 * * * *", {});
   await boss.schedule(JOB_NAMES.NOTIFICATION_DIGEST_SCAN, "*/30 * * * *", {});
   await boss.schedule(JOB_NAMES.IMPERSONATION_CLEANUP, "*/5 * * * *", {});
   await boss.schedule(JOB_NAMES.SUPPORT_TICKET_AUTO_CLOSE, "0 2 * * *", {});
+
+  // Catch-up run: closes sprints that went overdue while the worker was down,
+  // without waiting for the next cron slot. The queue's "exclusive" policy
+  // prevents a duplicate if a scheduled run is already queued.
+  await boss.send(JOB_NAMES.SPRINT_AUTO_CLOSE, {});
 
   console.log("[worker] handlers registered");
 }

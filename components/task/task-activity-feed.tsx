@@ -5,7 +5,9 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   CheckCircleIcon,
+  CheckIcon,
   CodeBlockIcon,
+  CopyIcon,
   FileIcon,
   FilePdfIcon,
   ImageIcon,
@@ -33,6 +35,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { format, formatDistanceToNow } from "date-fns";
 import * as React from "react";
+import { toast } from "sonner";
 import {
   getWorkspaceMentionMembers,
   type MentionMember,
@@ -49,6 +52,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNoteImageUpload } from "@/hooks/use-note-image-upload";
 import { describeEvent } from "@/lib/activity-descriptions";
+import {
+  browserClipboardEnv,
+  buildCommentClipboardContent,
+  copyCommentToClipboard,
+} from "@/lib/comment-clipboard";
 import { LINK_OPTIONS } from "@/lib/tiptap-link";
 import { cn } from "@/lib/utils";
 
@@ -383,7 +391,12 @@ function CommentEditor({
       attributes: {
         class: cn(
           "prose prose-sm dark:prose-invert max-w-none outline-none px-3 py-2.5 text-sm",
-          compact ? "min-h-[44px]" : "min-h-[72px]"
+          compact ? "min-h-[44px]" : "min-h-[72px]",
+          // Cap the visual height: the editor grows with its content up to
+          // this limit, then scrolls internally so the toolbar + Send button
+          // below it are never pushed out of the composer by a large paste.
+          // The content itself is never truncated.
+          "max-h-[min(40vh,320px)] overflow-y-auto overscroll-contain break-words"
         ),
       },
     },
@@ -863,6 +876,27 @@ function CommentItem({
     onRefresh();
   }
 
+  const [copied, setCopied] = React.useState(false);
+
+  async function handleCopy() {
+    try {
+      // Rich copy (text + html + images) when the browser supports it,
+      // otherwise plain text with image URLs — see lib/comment-clipboard.ts.
+      await copyCommentToClipboard(
+        buildCommentClipboardContent(
+          comment.body,
+          comment.attachments,
+          window.location.origin
+        ),
+        browserClipboardEnv()
+      );
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Couldn't copy comment");
+    }
+  }
+
   const thumbsUpReaction = comment.reactions.find((r) => r.emoji === "👍");
   const hasThumbsUp =
     thumbsUpReaction?.userIds.includes(currentUserId) ?? false;
@@ -1103,6 +1137,27 @@ function CommentItem({
                   ) : (
                     "Like"
                   )}
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Copy comment text */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label="Copy comment"
+                    className="size-7 flex items-center justify-center rounded-md border border-base-300 hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors"
+                    onClick={handleCopy}
+                    type="button"
+                  >
+                    {copied ? (
+                      <CheckIcon className="size-3.5 text-success" />
+                    ) : (
+                      <CopyIcon className="size-3.5" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {copied ? "Copied" : "Copy"}
                 </TooltipContent>
               </Tooltip>
 

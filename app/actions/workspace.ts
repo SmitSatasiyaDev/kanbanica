@@ -28,6 +28,7 @@ import {
 } from "@/lib/member-limit";
 import { createNotifications } from "@/lib/notifications/create-notification";
 import { getWorkspaceMembership } from "@/lib/permissions";
+import { userHasDisplayName } from "@/lib/profile-name";
 import { rateLimit } from "@/lib/rate-limit";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import {
@@ -439,7 +440,8 @@ export async function joinViaLink(
     .from(workspace)
     .where(eq(workspace.id, ws.id))
     .limit(1);
-  const joinerName = session.user.name?.trim() || session.user.email || "Someone";
+  const joinerName =
+    session.user.name?.trim() || session.user.email || "Someone";
   createNotifications({
     workspaceId: ws.id,
     actorId: session.user.id,
@@ -535,7 +537,8 @@ export async function inviteMember(data: {
     .then((r) => r[0]);
 
   const inviteUrl = `${env.APP_URL}/invite/${inviteToken}`;
-  const inviterName = session.user.name?.trim() || session.user.email || "Someone";
+  const inviterName =
+    session.user.name?.trim() || session.user.email || "Someone";
   const workspaceName = ws?.name ?? "a workspace";
 
   // Dev convenience only — never log invite tokens/URLs in production.
@@ -665,7 +668,8 @@ export async function resendInvite(data: {
       .then((r) => r[0]);
 
     const inviteUrl = `${env.APP_URL}/invite/${newToken}`;
-    const inviterName = session.user.name?.trim() || session.user.email || "Someone";
+    const inviterName =
+      session.user.name?.trim() || session.user.email || "Someone";
     const workspaceName = ws?.name ?? "a workspace";
 
     // Re-deliver the in-app invite (if the invitee has an account) pointing at the
@@ -721,7 +725,18 @@ export type InviteErrorCode =
   | "rate_limited";
 
 export type InviteState =
-  | { state: "pending"; workspaceName: string | null }
+  | {
+      state: "pending";
+      workspaceName: string | null;
+      inviterName: string | null;
+      /** Display label, e.g. "Member". */
+      role: string;
+      /** Address the invite was sent to (null for an addressless invite). */
+      email: string | null;
+      authenticated: boolean;
+      /** Signed in but with no display name yet — needs the name step. */
+      needsName: boolean;
+    }
   | { state: "accepted"; workspaceId: string }
   | { state: "error"; code: InviteErrorCode; error: string };
 
@@ -739,15 +754,14 @@ function inviteError(code: InviteErrorCode): InviteState {
 }
 
 /**
- * Read-only resolution of an invite link for the current user. Never mutates;
- * an invite already accepted by THIS user resolves to "accepted" (not an
- * error), so reopening/refreshing the link lands them in the workspace.
+ * Read-only resolution of an invite link. Works signed out too (the invite page
+ * shows who invited you BEFORE any sign-in / name step), and never mutates — the
+ * invite is only consumed by `acceptInvite`. An invite already accepted by THIS
+ * user resolves to "accepted" (not an error), so reopening/refreshing the link
+ * lands them in the workspace.
  */
 export async function getInviteState(token: string): Promise<InviteState> {
   const session = await requireSession();
-  if (!session) {
-    return inviteError("auth_required");
-  }
   const [invite] = await db
     .select()
     .from(workspaceMember)
@@ -756,7 +770,7 @@ export async function getInviteState(token: string): Promise<InviteState> {
     return inviteError("invalid");
   }
   if (invite.status === "ACTIVE") {
-    return invite.userId === session.user.id
+    return session && invite.userId === session.user.id
       ? { state: "accepted", workspaceId: invite.workspaceId }
       : inviteError("used");
   }
@@ -766,7 +780,11 @@ export async function getInviteState(token: string): Promise<InviteState> {
   if (invite.inviteExpiresAt && invite.inviteExpiresAt < new Date()) {
     return inviteError("expired");
   }
-  if (invite.email && invite.email !== session.user.email?.toLowerCase()) {
+  if (
+    session &&
+    invite.email &&
+    invite.email !== session.user.email?.toLowerCase()
+  ) {
     return inviteError("wrong_user");
   }
   const [ws] = await db
@@ -774,15 +792,29 @@ export async function getInviteState(token: string): Promise<InviteState> {
     .from(workspace)
     .where(eq(workspace.id, invite.workspaceId))
     .limit(1);
-  return { state: "pending", workspaceName: ws?.name ?? null };
+  let inviterName: string | null = null;
+  if (invite.invitedBy) {
+    const [inviter] = await db
+      .select({ name: user.name, email: user.email })
+      .from(user)
+      .where(eq(user.id, invite.invitedBy))
+      .limit(1);
+    inviterName = inviter?.name?.trim() || inviter?.email || null;
+  }
+  return {
+    state: "pending",
+    workspaceName: ws?.name ?? null,
+    inviterName,
+    role: roleLabel(invite.role),
+    email: invite.email,
+    authenticated: !!session,
+    needsName: session ? !(await userHasDisplayName(session.user.id)) : false,
+  };
 }
 
 export async function acceptInvite(
   token: string
-): Promise<
-  | { workspaceId: string }
-  | { error: string; code: InviteErrorCode }
-> {
+): Promise<{ workspaceId: string } | { error: string; code: InviteErrorCode }> {
   const fail = (code: InviteErrorCode) => ({
     error: INVITE_ERRORS[code],
     code,
@@ -860,7 +892,8 @@ export async function acceptInvite(
   // Notify the inviter that their invitation was accepted — only on the
   // winning transition, never on an idempotent short-circuit above.
   if (invite.invitedBy) {
-    const accepterName = session.user.name?.trim() || session.user.email || "Someone";
+    const accepterName =
+      session.user.name?.trim() || session.user.email || "Someone";
     const [wsRow] = await db
       .select({ name: workspace.name })
       .from(workspace)
@@ -987,7 +1020,8 @@ export async function activatePendingInvites(): Promise<{ activated: number }> {
 
     // Notify the inviter that their invitation was accepted (mirrors acceptInvite).
     if (invite.invitedBy) {
-      const accepterName = session.user.name?.trim() || session.user.email || "Someone";
+      const accepterName =
+        session.user.name?.trim() || session.user.email || "Someone";
       const [wsRow] = await db
         .select({ name: workspace.name })
         .from(workspace)
@@ -1147,7 +1181,8 @@ export async function removeMember(data: {
 
   // Notify the removed member so they understand why they lost access.
   if (target[0].userId) {
-    const actorName = session.user.name?.trim() || session.user.email || "Someone";
+    const actorName =
+      session.user.name?.trim() || session.user.email || "Someone";
     const [wsRow] = await db
       .select({ name: workspace.name })
       .from(workspace)

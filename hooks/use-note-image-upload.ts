@@ -129,15 +129,15 @@ export function useNoteImageUpload(opts: {
     tempId: string,
     file: File,
     uploading: boolean,
-    previewSrc: string | null
+    previewSrc: string | null,
+    at?: number
   ) {
-    const chain = editorRef.current?.chain().focus();
-    if (!chain) {
+    const editor = editorRef.current;
+    if (!editor) {
       return;
     }
-    if (isImageFile(file)) {
-      chain
-        .insertContent({
+    const node = isImageFile(file)
+      ? {
           type: "noteImage",
           attrs: {
             attachmentId: tempId,
@@ -145,11 +145,8 @@ export function useNoteImageUpload(opts: {
             previewSrc,
             alt: file.name,
           },
-        })
-        .run();
-    } else {
-      chain
-        .insertContent({
+        }
+      : {
           type: "noteFile",
           attrs: {
             attachmentId: tempId,
@@ -158,8 +155,12 @@ export function useNoteImageUpload(opts: {
             fileSize: file.size,
             mimeType: file.type || "application/octet-stream",
           },
-        })
-        .run();
+        };
+    // `at` = explicit position (ordered multi-part paste); otherwise the cursor.
+    if (at === undefined) {
+      editor.chain().focus().insertContent(node).run();
+    } else {
+      editor.chain().insertContentAt(at, node).run();
     }
   }
 
@@ -187,7 +188,7 @@ export function useNoteImageUpload(opts: {
   }
 
   // Immediate mode: insert placeholder, upload, patch (or remove on failure).
-  async function insertAndUpload(file: File) {
+  async function insertAndUpload(file: File, at?: number) {
     const taskId = taskIdRef.current;
     if (!taskId) {
       return;
@@ -195,7 +196,7 @@ export function useNoteImageUpload(opts: {
     const tempId = newTempId();
     const previewSrc = isImageFile(file) ? URL.createObjectURL(file) : null;
     setUploadCount((n) => n + 1);
-    insertPlaceholder(tempId, file, true, previewSrc);
+    insertPlaceholder(tempId, file, true, previewSrc, at);
     try {
       const up = await uploadOne(taskId, file);
       if (!up) {
@@ -214,19 +215,19 @@ export function useNoteImageUpload(opts: {
   }
 
   // Deferred mode: insert a placeholder only; remember the File for flush.
-  function insertPending(file: File) {
+  function insertPending(file: File, at?: number) {
     const tempId = newTempId();
     const previewSrc = isImageFile(file) ? URL.createObjectURL(file) : null;
     pendingRef.current.set(tempId, file);
-    insertPlaceholder(tempId, file, false, previewSrc);
+    insertPlaceholder(tempId, file, false, previewSrc, at);
   }
 
-  function handleFiles(files: File[]) {
+  function handleFiles(files: File[], at?: number) {
     for (const f of files) {
       if (deferredRef.current) {
-        insertPending(f);
+        insertPending(f, at);
       } else if (taskIdRef.current) {
-        void insertAndUpload(f);
+        void insertAndUpload(f, at);
       }
     }
   }
@@ -235,17 +236,96 @@ export function useNoteImageUpload(opts: {
   const handleFilesRef = React.useRef(handleFiles);
   handleFilesRef.current = handleFiles;
 
+  // Rich HTML pastes (e.g. a comment copied with its Copy button, or content
+  // from Gmail) carry images as `data:` URLs rather than as clipboard files, and
+  // the schema would silently drop them. Re-insert the text/html in order and
+  // turn each embedded image into a normal inline upload.
+  const pasteHtmlWithImages = React.useCallback(async (html: string) => {
+    const body = new DOMParser().parseFromString(html, "text/html").body;
+    const steps: ({ html: string } | { file: File })[] = [];
+    let chunk = "";
+    const flush = () => {
+      if (chunk.trim()) {
+        steps.push({ html: chunk });
+      }
+      chunk = "";
+    };
+    let n = 0;
+    for (const node of Array.from(body.children)) {
+      const imgs = Array.from(node.querySelectorAll("img")).filter((i) =>
+        i.src.startsWith("data:image/")
+      );
+      if (node instanceof HTMLImageElement) {
+        imgs.push(...(node.src.startsWith("data:image/") ? [node] : []));
+      }
+      if (imgs.length === 0) {
+        chunk += node.outerHTML;
+        continue;
+      }
+      const rest = node.cloneNode(true) as Element;
+      for (const img of Array.from(rest.querySelectorAll("img"))) {
+        img.remove();
+      }
+      if (rest.textContent?.trim()) {
+        chunk += rest.outerHTML;
+      }
+      flush();
+      for (const img of imgs) {
+        try {
+          const blob = await (await fetch(img.src)).blob();
+          const ext = blob.type.split("/")[1] || "png";
+          steps.push({
+            file: new File([blob], `pasted-image-${++n}.${ext}`, {
+              type: blob.type,
+            }),
+          });
+        } catch {
+          // unreadable image — skip it, keep the rest
+        }
+      }
+    }
+    flush();
+    // Insert at explicit, advancing positions. Using the live selection here
+    // would be wrong: after an atom image node is inserted the selection sits
+    // on it, so the next chunk would REPLACE the image.
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    editor.commands.deleteSelection();
+    let pos = editor.state.selection.from;
+    for (const step of steps) {
+      const before = editor.state.doc.content.size;
+      if ("html" in step) {
+        editor.chain().insertContentAt(pos, step.html).run();
+      } else {
+        handleFilesRef.current([step.file], pos);
+      }
+      pos = Math.min(
+        pos + (editor.state.doc.content.size - before),
+        editor.state.doc.content.size
+      );
+    }
+    editor.commands.focus();
+  }, []);
+
   const handlePaste = React.useCallback(
     (_view: unknown, event: ClipboardEvent) => {
       const files = filesForMode(event.clipboardData?.files);
       if (files.length === 0) {
+        const html = event.clipboardData?.getData("text/html") ?? "";
+        if (/<img[^>]+src=["']data:image\//i.test(html)) {
+          event.preventDefault();
+          void pasteHtmlWithImages(html);
+          return true;
+        }
         return false;
       }
       event.preventDefault();
       handleFilesRef.current(files);
       return true;
     },
-    [filesForMode]
+    [filesForMode, pasteHtmlWithImages]
   );
 
   const handleDrop = React.useCallback(

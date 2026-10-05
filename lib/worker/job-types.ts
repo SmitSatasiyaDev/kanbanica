@@ -12,6 +12,12 @@ export const JOB_NAMES = {
   SUPPORT_TICKET_AUTO_CLOSE: "support.ticket-auto-close",
 } as const;
 
+// Sprint auto-close is idempotent (it only touches ACTIVE sprints past their end
+// date), so it runs hourly instead of once a day: pg-boss does not backfill a
+// cron slot missed while the worker was down, and a single 00:00 UTC slot meant
+// one missed boot left an overdue sprint ACTIVE for a full extra day (or more).
+export const SPRINT_AUTO_CLOSE_CRON = "0 * * * *";
+
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];
 
 export interface EmailSendPayload {

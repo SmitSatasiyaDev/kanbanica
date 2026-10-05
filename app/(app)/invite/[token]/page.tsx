@@ -7,13 +7,20 @@ import {
 } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
+import { saveUserName } from "@/app/actions/onboarding";
 import {
   acceptInvite,
   declineInvite,
   getInviteState,
   type InviteErrorCode,
+  type InviteState,
 } from "@/app/actions/workspace";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PRODUCT_NAME } from "@/config/platform";
+
+type PendingInvite = Extract<InviteState, { state: "pending" }>;
 
 const ERROR_TITLES: Record<InviteErrorCode, string> = {
   auth_required: "Sign in required",
@@ -37,6 +44,15 @@ export default function InvitePage({
   const [errorCode, setErrorCode] = React.useState<InviteErrorCode>("invalid");
   const [workspaceId, setWorkspaceId] = React.useState("");
   const [token, setToken] = React.useState("");
+  const [invite, setInvite] = React.useState<PendingInvite | null>(null);
+  // Set once the visitor has explicitly clicked "Accept invitation" (carried
+  // across the sign-in redirect as ?accepted=1). Opening the link alone never
+  // accepts anything.
+  const [intent, setIntent] = React.useState(false);
+  const [step, setStep] = React.useState<"intro" | "name">("intro");
+  const [name, setName] = React.useState("");
+  const [nameError, setNameError] = React.useState("");
+  const autoAcceptedRef = React.useRef(false);
   // Synchronous in-flight locks — a rapid double click/tap can fire the
   // handler twice before the `disabled` prop takes effect on the next
   // render, which would submit the (single-use) token twice.
@@ -45,6 +61,9 @@ export default function InvitePage({
 
   React.useEffect(() => {
     params.then((p) => setToken(p.token));
+    setIntent(
+      new URLSearchParams(window.location.search).get("accepted") === "1"
+    );
   }, [params]);
 
   // Resolve the link's state up front, so an invite this user already accepted
@@ -64,13 +83,11 @@ export default function InvitePage({
         setStatus("success");
         router.replace(`/${res.workspaceId}`);
       } else if (res.state === "error") {
-        if (res.code === "auth_required") {
-          router.replace("/login");
-          return;
-        }
         setErrorCode(res.code);
         setErrorMsg(res.error);
         setStatus("error");
+      } else {
+        setInvite(res);
       }
     });
     return () => {
@@ -98,6 +115,51 @@ export default function InvitePage({
     } finally {
       acceptingRef.current = false;
     }
+  }
+
+  // "Accept invitation" on the intro screen. Signed out → stash the token and go
+  // through the existing login/sign-up flow (it returns here with ?accepted=1);
+  // signed in without a name → name step; otherwise accept straight away.
+  function handleIntroAccept() {
+    if (!(invite && token)) {
+      return;
+    }
+    if (!invite.authenticated) {
+      window.location.assign(`/api/invite/${encodeURIComponent(token)}`);
+    } else if (invite.needsName) {
+      setStep("name");
+    } else {
+      void handleAccept();
+    }
+  }
+
+  // Back from sign-in after an explicit Accept: finish without asking again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per resolved invite; handleAccept is guarded by autoAcceptedRef
+  React.useEffect(() => {
+    if (!(intent && invite?.authenticated) || autoAcceptedRef.current) {
+      return;
+    }
+    if (invite.needsName) {
+      setStep("name");
+    } else {
+      autoAcceptedRef.current = true;
+      void handleAccept();
+    }
+  }, [intent, invite]);
+
+  async function handleNameSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (acceptingRef.current) {
+      return;
+    }
+    setErrorMsg("");
+    const saved = await saveUserName(name);
+    if ("error" in saved) {
+      setNameError(saved.error);
+      return;
+    }
+    setNameError("");
+    await handleAccept();
   }
 
   async function handleDecline() {
@@ -185,18 +247,102 @@ export default function InvitePage({
     );
   }
 
+  // Still resolving the invite (or auto-accepting after sign-in).
+  if (!invite || (intent && invite.authenticated && !invite.needsName)) {
+    return (
+      <div className="h-full overflow-auto flex items-center justify-center bg-base-200/30 p-4">
+        <SpinnerGapIcon className="size-6 animate-spin text-base-content/60" />
+      </div>
+    );
+  }
+
+  const busy = status === "loading" || status === "declining" || !token;
+  const workspaceLabel = invite.workspaceName
+    ? `\u201c${invite.workspaceName}\u201d`
+    : "a workspace";
+
+  if (step === "name") {
+    return (
+      <div className="h-full overflow-auto flex items-center justify-center bg-base-200/30 p-4">
+        <form
+          className="bg-base-100 rounded-xl border shadow-sm p-6 sm:p-8 max-w-sm w-full space-y-4"
+          onSubmit={handleNameSubmit}
+        >
+          <div className="space-y-1 text-center">
+            <h1 className="text-lg font-semibold">Create your account</h1>
+            <p className="text-sm text-base-content/60">
+              One last step to join {workspaceLabel}.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-name">Name</Label>
+            <Input
+              autoFocus
+              id="invite-name"
+              maxLength={100}
+              onChange={(e) => setName(e.target.value)}
+              value={name}
+            />
+          </div>
+          {invite.email && (
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-email">Email</Label>
+              <Input disabled id="invite-email" readOnly value={invite.email} />
+            </div>
+          )}
+          {(nameError || errorMsg) && (
+            <p className="text-sm text-error">{nameError || errorMsg}</p>
+          )}
+          <Button
+            className="w-full"
+            disabled={busy || !name.trim()}
+            type="submit"
+          >
+            {status === "loading" ? (
+              <span className="flex items-center gap-2">
+                <SpinnerGapIcon className="size-4 animate-spin" />
+                Joining…
+              </span>
+            ) : (
+              "Create account & join"
+            )}
+          </Button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-auto flex items-center justify-center bg-base-200/30 p-4">
-      <div className="bg-base-100 rounded-xl border shadow-sm p-8 max-w-sm w-full text-center space-y-4">
-        <h1 className="text-lg font-semibold">Workspace invitation</h1>
-        <p className="text-sm text-base-content/60">
-          You&rsquo;ve been invited to join a workspace. Click below to accept.
-        </p>
+      <div className="bg-base-100 rounded-xl border shadow-sm p-6 sm:p-8 max-w-sm w-full text-center space-y-4">
+        <div className="space-y-2">
+          <h1 className="text-xl font-semibold">You&rsquo;re invited!</h1>
+          <p className="text-sm text-base-content/60">
+            {invite.inviterName ? (
+              <>
+                <span className="font-medium text-base-content">
+                  {invite.inviterName}
+                </span>{" "}
+                invited you to join{" "}
+              </>
+            ) : (
+              "You\u2019ve been invited to join "
+            )}
+            <span className="font-medium text-base-content">
+              {workspaceLabel}
+            </span>{" "}
+            on {PRODUCT_NAME}.
+          </p>
+          <p className="text-sm text-base-content/60">
+            Role:{" "}
+            <span className="font-medium text-base-content">{invite.role}</span>
+          </p>
+        </div>
         <div className="space-y-2">
           <Button
             className="w-full"
-            disabled={status === "loading" || status === "declining" || !token}
-            onClick={handleAccept}
+            disabled={busy}
+            onClick={handleIntroAccept}
           >
             {status === "loading" ? (
               <span className="flex items-center gap-2">
@@ -204,25 +350,32 @@ export default function InvitePage({
                 Accepting…
               </span>
             ) : (
-              "Accept invitation"
+              "Accept Invitation"
             )}
           </Button>
-          <Button
-            className="w-full"
-            disabled={status === "loading" || status === "declining" || !token}
-            onClick={handleDecline}
-            variant="outline"
-          >
-            {status === "declining" ? (
-              <span className="flex items-center gap-2">
-                <SpinnerGapIcon className="size-4 animate-spin" />
-                Declining…
-              </span>
-            ) : (
-              "Decline"
-            )}
-          </Button>
+          {invite.authenticated && (
+            <Button
+              className="w-full"
+              disabled={busy}
+              onClick={handleDecline}
+              variant="outline"
+            >
+              {status === "declining" ? (
+                <span className="flex items-center gap-2">
+                  <SpinnerGapIcon className="size-4 animate-spin" />
+                  Declining…
+                </span>
+              ) : (
+                "Decline"
+              )}
+            </Button>
+          )}
         </div>
+        {!invite.authenticated && (
+          <p className="text-xs text-base-content/60">
+            You&rsquo;ll sign in or create your account next.
+          </p>
+        )}
       </div>
     </div>
   );
