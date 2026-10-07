@@ -1,12 +1,13 @@
 "use server";
 
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { session as sessionTable, user } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { requireSession } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { isValidTimeZone } from "@/lib/timezone";
 import { purgeUser, soleOwnedWorkspaces } from "@/lib/user-deletion";
 
 export interface ActionState {
@@ -62,6 +63,40 @@ export async function updateAppearanceMode(
     .where(eq(user.id, session.user.id));
 
   return { ok: true };
+}
+
+// Personal IANA timezone for Daily Checklist dates. null clears it (falls back
+// to the workspace timezone, then UTC). Existing checklist days are never touched.
+export async function updateUserTimezone(
+  timezone: string | null
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireSession();
+  if (timezone !== null && !isValidTimeZone(timezone)) {
+    return { error: "Invalid timezone" };
+  }
+  await db
+    .update(user)
+    .set({ timezone, updatedAt: new Date() })
+    .where(eq(user.id, session.user.id));
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+// First-time default from the browser. Only writes while the user has no
+// timezone, so it can never overwrite an explicit choice.
+export async function initUserTimezone(
+  timezone: string
+): Promise<{ ok: true; changed: boolean } | { error: string }> {
+  const session = await requireSession();
+  if (!isValidTimeZone(timezone)) {
+    return { error: "Invalid timezone" };
+  }
+  const rows = await db
+    .update(user)
+    .set({ timezone, updatedAt: new Date() })
+    .where(and(eq(user.id, session.user.id), isNull(user.timezone)))
+    .returning({ id: user.id });
+  return { ok: true, changed: rows.length > 0 };
 }
 
 export async function revokeSessionAction(formData: FormData): Promise<void> {

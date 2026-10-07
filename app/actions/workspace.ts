@@ -28,6 +28,7 @@ import {
 } from "@/lib/member-limit";
 import { createNotifications } from "@/lib/notifications/create-notification";
 import { getWorkspaceMembership } from "@/lib/permissions";
+import { isValidTimeZone } from "@/lib/timezone";
 import { userHasDisplayName } from "@/lib/profile-name";
 import { rateLimit } from "@/lib/rate-limit";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
@@ -74,6 +75,7 @@ export async function updateWorkspace(data: {
   name: string;
   slug: string;
   logoEmoji: string | null;
+  timezone?: string | null;
 }): Promise<{ ok: true } | { error: string }> {
   const session = await requireSession();
   if (!session) {
@@ -87,6 +89,9 @@ export async function updateWorkspace(data: {
 
   const name = data.name.trim();
   const slug = data.slug.trim().toLowerCase();
+  if (data.timezone != null && !isValidTimeZone(data.timezone)) {
+    return { error: "Invalid timezone" };
+  }
   if (!name) {
     return { error: "Name is required" };
   }
@@ -108,7 +113,14 @@ export async function updateWorkspace(data: {
 
   await db
     .update(workspace)
-    .set({ name, slug, logoEmoji: data.logoEmoji, updatedAt: new Date() })
+    .set({
+      name,
+      slug,
+      logoEmoji: data.logoEmoji,
+      // undefined = leave unchanged; null = clear (UTC fallback).
+      ...(data.timezone !== undefined && { timezone: data.timezone }),
+      updatedAt: new Date(),
+    })
     .where(eq(workspace.id, data.workspaceId));
 
   void refreshWorkspace(data.workspaceId);

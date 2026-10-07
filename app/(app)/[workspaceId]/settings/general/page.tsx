@@ -22,6 +22,7 @@ export default async function GeneralSettingsPage({
       name: workspace.name,
       slug: workspace.slug,
       logoEmoji: workspace.logoEmoji,
+      timezone: workspace.timezone,
     })
     .from(workspace)
     .where(eq(workspace.id, workspaceId));

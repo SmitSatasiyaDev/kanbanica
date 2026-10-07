@@ -4,6 +4,7 @@ import {
   DeleteAccountForm,
 } from "@/components/profile/account-forms";
 import { AvatarUpload } from "@/components/profile/avatar-upload";
+import { TimezoneCard } from "@/components/profile/timezone-card";
 import { PasswordCard } from "@/components/profile/password-card";
 import {
   type SessionRow,
@@ -18,7 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { session as sessionTable, user } from "@/db/schema";
+import { session as sessionTable, user, workspace } from "@/db/schema";
 import { userHasPassword } from "@/lib/auth-password";
 import { requireSession } from "@/lib/authz";
 import { db } from "@/lib/db";
@@ -34,7 +35,7 @@ export default async function ProfilePage({
 }) {
   const { workspaceId } = await params;
   const current = await requireSession();
-  const [freshUser, sessions, hasPassword] = await Promise.all([
+  const [freshUser, sessions, hasPassword, [ws]] = await Promise.all([
     db.query.user.findFirst({ where: eq(user.id, current.user.id) }),
     db
       .select({
@@ -49,6 +50,10 @@ export default async function ProfilePage({
       .where(eq(sessionTable.userId, current.user.id))
       .orderBy(desc(sessionTable.createdAt)),
     userHasPassword(current.user.id),
+    db
+      .select({ timezone: workspace.timezone })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId)),
   ]);
 
   if (!freshUser) {
@@ -90,6 +95,11 @@ export default async function ProfilePage({
           callbackURL={`/${workspaceId}/profile`}
           email={freshUser.email}
           name={freshUser.name}
+        />
+
+        <TimezoneCard
+          timezone={freshUser.timezone ?? null}
+          workspaceTimezone={ws?.timezone ?? null}
         />
 
         <PasswordCard hasPassword={hasPassword} />

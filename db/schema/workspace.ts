@@ -39,6 +39,9 @@ export const workspace = pgTable("workspace", {
   // Enforced by `requireMemberCapacity`.
   maxMembers: integer("max_members"),
   maxGuests: integer("max_guests"),
+  // IANA timezone; default for members without their own `user.timezone`.
+  // NULL = unset (UTC).
+  timezone: text("timezone"),
   status: workspaceStatusEnum("status").notNull().default("ACTIVE"),
   // Accent color only — workspace-wide branding, admin-controlled. Light/dark/
   // auto is a personal preference, not workspace state — see `user.appearanceMode`.

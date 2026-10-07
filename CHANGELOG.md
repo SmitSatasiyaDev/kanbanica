@@ -31,6 +31,28 @@ dated section, e.g.:
 ## [Unreleased]
 
 ### Added
+- **User and workspace timezones for the Checklist.** Checklist dates, recurrence,
+  start/end dates and generation (worker and on-demand) now use the user's timezone, then
+  the workspace timezone, then UTC — no longer the notification digest timezone. Set it in
+  Profile Settings → Timezone (auto-detected from the browser on first use) and Workspace
+  Settings → General. Past days never move. Adds migration `0032_timezones` (two nullable
+  columns, additive).
+- **Checklist.** A personal daily checklist ("My Checklist") plus recurring
+  Team Checklists that Owners/Admins define as templates and assign to members. Every
+  user gets their own copy each day, and past days are saved read-only history that
+  later template edits never change. Sidebar → *Checklist*; management at
+  bottom user menu → *Checklist admin*. Adds migration `0030_daily_checklist`
+  (additive) and the `daily-checklist.generate` worker job. See docs/daily-checklist.md.
+- **Custom fields on Team Checklist templates.** Owners/Admins can add Text, Dropdown,
+  Number, Date and Checkbox fields (optionally required) to a template; members fill
+  them in per item from a *Details* dialog. Each day snapshots the fields it was generated
+  with, so later template edits never change past days. Adds migration
+  `0031_daily_checklist_fields` (additive). See docs/daily-checklist.md.
+- **Checklist: instant checklist for newly added assignees.** Adding a user to an
+  active Team Checklist template now creates their checklist for today right away instead of
+  at the next worker run or page open. Existing users' days are never changed. No migration.
+- **Checklist: checkbox + note on Team Checklist rows.** The Status dropdown column is replaced by a checkbox (Done = checked, Pending/In progress = unchecked) and an optional note action stored in the existing item `notes` field. No migration.
+- **Checklist: aggregate note count on shared Team rows.** A collapsed row with several assignees shows how many members have a saved note; clicking it expands the members. No migration.
 - **Verification-code sign-in.** A magic link opened in a different browser shows
   a 6-digit one-time code (not emailed) to enter where sign-in started. Codes are stored
   hashed, expire after 10 minutes, lock after 5 wrong attempts, and are rate

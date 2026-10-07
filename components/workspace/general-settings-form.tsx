@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateWorkspace } from "@/app/actions/workspace";
+import { TimezoneSelect } from "@/components/common/timezone-select";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +26,7 @@ interface GeneralSettingsFormProps {
     name: string;
     slug: string;
     logoEmoji: string | null;
+    timezone: string | null;
   };
 }
 
@@ -34,6 +36,7 @@ export function GeneralSettingsForm({ workspace }: GeneralSettingsFormProps) {
   const [name, setName] = useState(workspace.name);
   const [slug, setSlug] = useState(workspace.slug);
   const [logoEmoji, setLogoEmoji] = useState(workspace.logoEmoji);
+  const [timezone, setTimezone] = useState(workspace.timezone);
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +46,7 @@ export function GeneralSettingsForm({ workspace }: GeneralSettingsFormProps) {
         name: name.trim(),
         slug: slug.trim(),
         logoEmoji,
+        timezone,
       });
       if ("error" in result) {
         toast.error(result.error);
@@ -59,7 +63,7 @@ export function GeneralSettingsForm({ workspace }: GeneralSettingsFormProps) {
         <CardTitle className="normal-case tracking-normal text-base font-semibold">
           General
         </CardTitle>
-        <CardDescription>Workspace name, logo and URL slug.</CardDescription>
+        <CardDescription>Workspace name, logo, URL slug and timezone.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-5 max-w-md" onSubmit={handleSave}>
@@ -111,6 +115,20 @@ export function GeneralSettingsForm({ workspace }: GeneralSettingsFormProps) {
             </div>
             <p className="text-xs text-base-content/60">
               Image upload arrives with the avatar system.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-timezone">Workspace timezone</Label>
+            <TimezoneSelect
+              id="ws-timezone"
+              onChange={setTimezone}
+              unsetLabel="Not set (UTC)"
+              value={timezone}
+            />
+            <p className="text-xs text-base-content/60">
+              Default for Daily Checklist dates for members who haven't set
+              their own timezone in Profile Settings.
             </p>
           </div>
 
