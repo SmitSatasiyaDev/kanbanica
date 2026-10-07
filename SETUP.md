@@ -111,6 +111,8 @@ Out of the box, Kanbanica uses passwordless **magic-link** sign-in.
 2. Because email (SMTP) isn't configured yet, **the magic link is printed in your terminal** — look at the `worker`/`next` logs for a line containing a `http://localhost:3000/...` link.
 3. Copy that link into your browser and open it. You're now signed in, and your account is created.
 
+The email contains only the sign-in link. Opened in the browser that requested it, the link signs you in directly. Opened in a different browser or device, it instead shows a 6-digit verification code (valid 10 minutes, 5 attempts) to type under "Enter verification code" on the "Check your inbox" screen where you started. The code is never emailed or logged.
+
 ### Sign in with a password (optional)
 
 If you'd rather use a normal email + password, set this in `.env` and restart:

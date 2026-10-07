@@ -30,6 +30,14 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+### Added
+- **Verification-code sign-in.** A magic link opened in a different browser shows
+  a 6-digit one-time code (not emailed) to enter where sign-in started. Codes are stored
+  hashed, expire after 10 minutes, lock after 5 wrong attempts, and are rate
+  limited per IP and per email. No migration required. A magic link opened in a
+  different browser than the one that requested it no longer signs in directly;
+  it shows the code (copy button, or "Sign in here instead") at `/login/code`.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added

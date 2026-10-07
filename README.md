@@ -106,7 +106,7 @@ It's built for teams who want a complete, production-grade project tool without 
 **For whoever runs it**
 
 - **Two-level permissions** — workspace roles plus per-project access, with guests scoped to only the projects they're invited to
-- **Flexible auth** — magic link, Google OAuth, or email + password, all converging on one account per email
+- **Flexible auth** — magic link (with a 6-digit code fallback across browsers), Google OAuth, or email + password, all converging on one account per email
 - **Notifications** — in-app, email digests, and Web Push
 - **Help Center & Support Tickets** — a self-serve article library plus a ticket-based support channel for your users
 - **Admin panel** — user management, integration settings, and platform-wide visibility
