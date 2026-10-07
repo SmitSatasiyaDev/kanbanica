@@ -23,7 +23,7 @@ export async function magicLinkTemplate({
 Use this link to sign in as ${email}:
 ${magicLinkUrl}
 
-If you did not request this link, you can ignore this email.`;
+If you did not request this email, you can safely ignore it.`;
 
   return { html, text };
 }
