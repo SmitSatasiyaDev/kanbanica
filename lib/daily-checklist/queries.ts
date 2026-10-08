@@ -3,13 +3,11 @@ import {
   dailyChecklistDay,
   dailyChecklistItem,
   dailyChecklistItemFieldValue,
-  dailyChecklistTemplate,
-  dailyChecklistTemplateAssignment,
   workspaceMember,
 } from "@/db/schema";
 import { todayInTz } from "@/lib/local-date";
 import type { ChecklistPriority, ChecklistStatus } from "./constants";
-import { type DbLike, ensureTeamDays, getUserTimezone } from "./ensure";
+import { type DbLike, getUserTimezone } from "./ensure";
 import type { FieldType } from "./fields";
 import { computeProgress } from "./progress";
 import type { ChecklistItemDTO, FieldValueDTO } from "./types";
@@ -98,38 +96,6 @@ export function completionFields(
   return status === "DONE"
     ? { status, completedAt: now, completedBy: userId }
     : { status, completedAt: null, completedBy: null };
-}
-
-/**
- * Admin / team views: make sure today's instances exist for every assignee whose
- * own local date equals `date`. Lets the admin page be correct without the worker.
- */
-export async function ensureTeamDaysForWorkspace(
-  executor: DbLike,
-  workspaceId: string,
-  date: string,
-  now = new Date()
-): Promise<void> {
-  const assignees = await executor
-    .selectDistinct({ userId: dailyChecklistTemplateAssignment.userId })
-    .from(dailyChecklistTemplateAssignment)
-    .innerJoin(
-      dailyChecklistTemplate,
-      eq(dailyChecklistTemplate.id, dailyChecklistTemplateAssignment.templateId)
-    )
-    .where(
-      and(
-        eq(dailyChecklistTemplate.workspaceId, workspaceId),
-        eq(dailyChecklistTemplate.isActive, true),
-        eq(dailyChecklistTemplate.isArchived, false)
-      )
-    );
-  for (const a of assignees) {
-    const { today } = await userToday(executor, a.userId, workspaceId, now);
-    if (today === date) {
-      await ensureTeamDays(executor, a.userId, date, workspaceId);
-    }
-  }
 }
 
 /** Active, non-guest members among `userIds` (assignment validation). */

@@ -42,6 +42,11 @@ export const QUEUE_OPTIONS: Record<
     policy: "exclusive",
     retryLimit: 0,
   },
+  [JOB_NAMES.DAILY_CHECKLIST_GENERATE]: {
+    expireInSeconds: 600,
+    policy: "exclusive",
+    retryLimit: 0,
+  },
   [JOB_NAMES.NOTIFICATION_CLEANUP]: {
     expireInSeconds: 300,
     policy: "exclusive",

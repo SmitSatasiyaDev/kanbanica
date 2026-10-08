@@ -1,18 +1,20 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { TimezoneAutoDetect } from "@/components/daily-checklist/timezone-auto-detect";
 import { DailyChecklistView } from "@/components/daily-checklist/daily-checklist-view";
+import { TimezoneAutoDetect } from "@/components/daily-checklist/timezone-auto-detect";
 import { PageHeader } from "@/components/scaffold/page-header";
 import { PRODUCT_NAME } from "@/config/platform";
 import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { userToday } from "@/lib/daily-checklist/queries";
+import { normalizeMemberFilter } from "@/lib/daily-checklist/team-aggregate";
 import { db } from "@/lib/db";
 import { getWorkspaceMembership } from "@/lib/permissions";
 
 interface DailyChecklistPageProps {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ filter?: string; tab?: string; view?: string }>;
 }
 
 export const metadata = { title: `Checklist — ${PRODUCT_NAME}` };
@@ -22,7 +24,7 @@ export default async function DailyChecklistPage({
   searchParams,
 }: DailyChecklistPageProps) {
   const { workspaceId } = await params;
-  const { tab } = await searchParams;
+  const { tab, view, filter } = await searchParams;
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -42,8 +44,10 @@ export default async function DailyChecklistPage({
     .from(user)
     .where(eq(user.id, session.user.id));
 
+  const { today } = await userToday(db, session.user.id, workspaceId);
+
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
+    <>
       {!u?.timezone && <TimezoneAutoDetect />}
       <PageHeader
         description="What do I need to check off today?"
@@ -51,10 +55,13 @@ export default async function DailyChecklistPage({
       />
       <DailyChecklistView
         canSeeTeam={canSeeTeam}
-        initialTab={tab === "team" ? "team" : "my"}
+        initialFilter={normalizeMemberFilter(filter)}
+        initialTab={tab === "my" ? "my" : "team"}
+        initialView={view === "history" ? "history" : "today"}
         isAdmin={isAdmin}
+        today={today}
         workspaceId={workspaceId}
       />
-    </div>
+    </>
   );
 }

@@ -34,11 +34,13 @@ for past dates.
 ## Generation (idempotent, concurrency-safe)
 - **Personal:** created lazily on first access of today (`ensurePersonalDay`). The worker is
   never involved, so a worker outage cannot make it unavailable.
-- **Team:** `ensureTeamDays()` (`lib/daily-checklist/ensure.ts`) runs when a member opens
-  Team Checklist (and when an admin opens *Today's Checklists*), so today's instances exist
-  even if the worker hasn't run. The pg-boss job `daily-checklist.generate`
-  (`lib/worker/handlers/daily-checklist-generate.ts`, cron `*/30 * * * *` + once on worker
-  boot) pre-generates them. Both use the same function; `INSERT … ON CONFLICT DO NOTHING`
+- **Team:** `ensureTeamDays()` (`lib/daily-checklist/ensure.ts`) runs for the **viewer only**
+  when they open Team Checklist, so their own today's instances exist even if the worker hasn't
+  run. Opening Team Checklist or admin *Today's Checklists* never sweeps other assignees (those
+  views just read). The pg-boss job `daily-checklist.generate`
+  (`lib/worker/handlers/daily-checklist-generate.ts`, cron `0 * * * *` — hourly — + once on
+  worker boot) is the background safety net that pre-generates everyone's. All paths use the
+  same function; `INSERT … ON CONFLICT DO NOTHING`
   on the day's unique index makes racing requests/workers create exactly one day.
 - **Newly added assignees:** when an admin creates a template or adds assignees
   (`createChecklistTemplate` / `updateChecklistTemplate` / `updateTemplateAssignments`), the
@@ -95,7 +97,7 @@ Owners/Admins define per-template fields (migration `0031_daily_checklist_fields
 `daily_checklist_field` (name, type `TEXT|DROPDOWN|NUMBER|DATE|CHECKBOX`, required, order),
 `daily_checklist_field_option` (dropdown `label`/`value`), `daily_checklist_item_field_value`
 (one row per item × field, unique `(itemId, fieldId)`). The field list is edited inside the
-template dialog (**Custom fields**, after Checklist items) and saved with the template; the
+template form page (`/daily-checklist/admin/templates/new` and `/[templateId]/edit`) (**Custom fields**, after Checklist items) and saved with the template; the
 standalone actions `createTemplateField` / `updateTemplateField` / `deleteTemplateField` /
 `reorderTemplateFields` are the same operations. A field's type can't change after creation.
 Nothing is hardcoded (no Subscription/Ticket fields); external data (e.g. Stripe) can later

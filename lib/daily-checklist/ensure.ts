@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   dailyChecklistDay,
   dailyChecklistField,
+  dailyChecklistFieldItem,
   dailyChecklistFieldOption,
   dailyChecklistItem,
   dailyChecklistItemFieldValue,
@@ -207,27 +208,59 @@ export async function ensureTeamDays(
             )
           )
           .orderBy(asc(dailyChecklistFieldOption.sortOrder));
+        // Fields limited to selected items only snapshot onto those items.
+        const scoped = fields.filter((f) => !f.appliesToAll);
+        const targets = new Map<string, Set<string>>();
+        if (scoped.length > 0) {
+          const links = await executor
+            .select()
+            .from(dailyChecklistFieldItem)
+            .where(
+              inArray(
+                dailyChecklistFieldItem.fieldId,
+                scoped.map((f) => f.id)
+              )
+            );
+          for (const l of links) {
+            const set = targets.get(l.fieldId) ?? new Set<string>();
+            set.add(l.templateItemId);
+            targets.set(l.fieldId, set);
+          }
+        }
+        const appliesTo = (
+          f: (typeof fields)[number],
+          templateItemId: string | null
+        ) =>
+          f.appliesToAll ||
+          (templateItemId !== null &&
+            (targets.get(f.id)?.has(templateItemId) ?? false));
         const valueRows = rows.flatMap((row) =>
-          fields.map((f, i) => ({
-            id: crypto.randomUUID(),
-            itemId: row.id,
-            fieldId: f.id,
-            fieldName: f.name,
-            fieldType: f.type,
-            fieldRequired: f.isRequired,
-            fieldOptions:
-              f.type === "DROPDOWN"
-                ? options
-                    .filter((o) => o.fieldId === f.id)
-                    .map((o) => ({ label: o.label, value: o.value }))
-                : null,
-            sortOrder: i,
-          }))
+          fields
+            .flatMap((f, i) =>
+              appliesTo(f, row.templateItemId) ? [{ f, i }] : []
+            )
+            .map(({ f, i }) => ({
+              id: crypto.randomUUID(),
+              itemId: row.id,
+              fieldId: f.id,
+              fieldName: f.name,
+              fieldType: f.type,
+              fieldRequired: f.isRequired,
+              fieldOptions:
+                f.type === "DROPDOWN"
+                  ? options
+                      .filter((o) => o.fieldId === f.id)
+                      .map((o) => ({ label: o.label, value: o.value }))
+                  : null,
+              sortOrder: i,
+            }))
         );
-        await executor
-          .insert(dailyChecklistItemFieldValue)
-          .values(valueRows)
-          .onConflictDoNothing();
+        if (valueRows.length > 0) {
+          await executor
+            .insert(dailyChecklistItemFieldValue)
+            .values(valueRows)
+            .onConflictDoNothing();
+        }
       }
     }
   }

@@ -18,6 +18,7 @@ import {
   GearIcon,
   KeyboardIcon,
   LightningIcon,
+  ListChecksIcon,
   ListIcon,
   LockSimpleIcon,
   MagnifyingGlassIcon,
@@ -578,8 +579,20 @@ export function WorkspaceShell({
                 ),
                 badge: null,
               },
+              {
+                href: `/${workspace.id}/daily-checklist`,
+                label: "Checklist",
+                icon: (
+                  <ListChecksIcon className="size-4 shrink-0" weight="fill" />
+                ),
+                badge: null,
+              },
             ].map(({ href, label, icon, badge }) => {
-              const active = pathname === href;
+              // Checklist owns a sub-route (/admin), so it stays highlighted there too.
+              const active =
+                pathname === href ||
+                (href.endsWith("/daily-checklist") &&
+                  pathname.startsWith(`${href}/`));
               return (
                 <Link
                   className={cn(
@@ -691,14 +704,16 @@ export function WorkspaceShell({
                         onClick={() => setOpenMenu(null)}
                         side="right"
                       >
-                        <Link
-                          className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          href={`/${workspace.id}/${s.id}/settings/general`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          <GearIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Settings
-                        </Link>
+                        {s.canManageList && (
+                          <Link
+                            className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                            href={`/${workspace.id}/${s.id}/settings/general`}
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            <GearIcon className="size-3.5 shrink-0 text-base-content/60" />
+                            Settings
+                          </Link>
+                        )}
                         <Link
                           className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
                           href={`/${workspace.id}/${s.id}/activity`}
@@ -707,43 +722,49 @@ export function WorkspaceShell({
                           <ClockIcon className="size-3.5 shrink-0 text-base-content/60" />
                           Activity
                         </Link>
-                        <Link
-                          className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          href={`/${workspace.id}/${s.id}/settings/members`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          <LockSimpleIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Members & Permissions
-                        </Link>
-                        <div className="my-1 h-px bg-base-300" />
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          onClick={() =>
-                            setSpaceAction({
-                              id: s.id,
-                              name: s.name,
-                              variant: "archive",
-                            })
-                          }
-                          type="button"
-                        >
-                          <ArchiveIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Archive Project
-                        </button>
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
-                          onClick={() =>
-                            setSpaceAction({
-                              id: s.id,
-                              name: s.name,
-                              variant: "delete",
-                            })
-                          }
-                          type="button"
-                        >
-                          <TrashIcon className="size-3.5 shrink-0" />
-                          Delete Project
-                        </button>
+                        {s.canManageList && (
+                          <Link
+                            className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                            href={`/${workspace.id}/${s.id}/settings/members`}
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            <LockSimpleIcon className="size-3.5 shrink-0 text-base-content/60" />
+                            Members & Permissions
+                          </Link>
+                        )}
+                        {isAdmin && (
+                          <>
+                            <div className="my-1 h-px bg-base-300" />
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                              onClick={() =>
+                                setSpaceAction({
+                                  id: s.id,
+                                  name: s.name,
+                                  variant: "archive",
+                                })
+                              }
+                              type="button"
+                            >
+                              <ArchiveIcon className="size-3.5 shrink-0 text-base-content/60" />
+                              Archive Project
+                            </button>
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
+                              onClick={() =>
+                                setSpaceAction({
+                                  id: s.id,
+                                  name: s.name,
+                                  variant: "delete",
+                                })
+                              }
+                              type="button"
+                            >
+                              <TrashIcon className="size-3.5 shrink-0" />
+                              Delete Project
+                            </button>
+                          </>
+                        )}
                       </PopoverContent>
                     </Popover>
                   </div>
@@ -1431,6 +1452,20 @@ export function WorkspaceShell({
                     >
                       <TrashIcon className="size-4 shrink-0 text-base-content/60" />
                       Trash
+                    </Link>
+                  )}
+                  {/* Checklist templates & team progress — owner/admin only. */}
+                  {isAdmin && (
+                    <Link
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-base-200"
+                      href={`/${workspace.id}/daily-checklist/admin`}
+                      onClick={() => {
+                        setProfileOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <ListChecksIcon className="size-4 shrink-0 text-base-content/60" />
+                      Checklist admin
                     </Link>
                   )}
                   <Link

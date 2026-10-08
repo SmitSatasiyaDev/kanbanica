@@ -112,9 +112,7 @@ run("Checklist — timezone resolution (real DB)", () => {
     if (!dbm) {
       return;
     }
-    await dbm.db
-      .delete(S.workspace)
-      .where(inArray(S.workspace.id, [W, W2]));
+    await dbm.db.delete(S.workspace).where(inArray(S.workspace.id, [W, W2]));
     await dbm.db.delete(S.user).where(inArray(S.user.id, Object.values(U)));
     await dbm.dbClient.end();
   });
@@ -259,6 +257,20 @@ run("Checklist — timezone resolution (real DB)", () => {
     });
     await ens.ensureTeamDays(dbm.db, U.john, "2026-10-07", W);
     expect(await dates(tpl, U.john)).toEqual(["2026-10-07", "2026-10-08"]);
+  });
+
+  it("team rows carry each assignee's effective timezone (for the overdue display)", async () => {
+    at("2026-10-07T10:00:00Z");
+    const tpl = await make(W);
+    as(U.admin);
+    const res = await m.getMyTeamChecklist(W);
+    const tzOf = (uid: string) =>
+      res.rows.find((r: any) => r.assigneeId === uid)?.assigneeTimezone;
+    expect(tzOf(U.smit)).toBe("Asia/Kolkata");
+    expect(tzOf(U.john)).toBe("America/New_York");
+    expect(tzOf(U.fallback)).toBe("America/New_York"); // workspace fallback
+    expect(res.rows.every((r: any) => typeof r.date === "string")).toBe(true);
+    void tpl;
   });
 
   it("falls back to UTC when neither user nor workspace has a timezone", async () => {

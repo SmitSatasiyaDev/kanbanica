@@ -18,11 +18,15 @@ export interface DailyChecklistGenerateStats {
 }
 
 /**
- * Pre-generates today's TEAM checklist instances for every assignee of an active
- * template, using each assignee's own local date in their effective timezone (user → workspace → UTC), per workspace. It is only a convenience: the
- * Team Checklist page and the admin page also call `ensureTeamDays` on demand, and
- * PERSONAL checklists are created lazily on first access (never by this job).
- * Idempotent — existing days are never touched, so re-runs and overlaps are safe.
+ * Background safety net (hourly + once at worker boot): pre-generates today's TEAM checklist
+ * instances for every assignee of an active template, using each assignee's own local date in
+ * their effective timezone (user → workspace → UTC), per workspace.
+ *
+ * It is the only path that generates for *everyone*. The Team Checklist page generates just
+ * the viewer's own day on demand, a newly added assignee is generated immediately by the admin
+ * action, and admin views only read. PERSONAL checklists are created lazily on first access
+ * (never by this job). Idempotent — existing days are never touched, so re-runs and overlaps
+ * are safe.
  */
 export async function runDailyChecklistGenerate(
   opts: { now?: Date; workspaceId?: string } = {}
@@ -40,10 +44,7 @@ export async function runDailyChecklistGenerate(
       dailyChecklistTemplate,
       eq(dailyChecklistTemplate.id, dailyChecklistTemplateAssignment.templateId)
     )
-    .innerJoin(
-      workspace,
-      eq(workspace.id, dailyChecklistTemplate.workspaceId)
-    )
+    .innerJoin(workspace, eq(workspace.id, dailyChecklistTemplate.workspaceId))
     .leftJoin(user, eq(user.id, dailyChecklistTemplateAssignment.userId))
     .where(
       and(

@@ -30,7 +30,20 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-08
+
 ### Added
+- **Checklist: "Does not repeat" recurrence.** A template can generate for its start date
+  only. The end date is hidden for one-time templates; daily, weekday, weekly and custom
+  weekly recurrence are unchanged. No migration.
+- **Checklist: History as a comparison matrix.** Admin → Checklist → History (and Today's
+  Checklists) show each template as members × items with a sticky Person column, a read-only
+  note/details popover per cell, and member cards on mobile. Member History shows the user's
+  own items as a plain list with notes inline. Saved notes are visible in History. Adds one
+  read-only batch action, `getChecklistDays` (admins read any Team day, members only their
+  own). No migration.
+- **Checklist: adds migration `0033_checklist_field_items`** (additive) — custom fields can
+  apply to selected template items.
 - **User and workspace timezones for the Checklist.** Checklist dates, recurrence,
   start/end dates and generation (worker and on-demand) now use the user's timezone, then
   the workspace timezone, then UTC — no longer the notification digest timezone. Set it in
@@ -59,6 +72,18 @@ dated section, e.g.:
   limited per IP and per email. No migration required. A magic link opened in a
   different browser than the one that requested it no longer signs in directly;
   it shows the code (copy button, or "Sign in here instead") at `/login/code`.
+
+### Changed
+- **Checklist layout.** The whole Checklist section (including template pages) shares one
+  full-width container with consistent side padding.
+- **Checklist: Pending and Done filters** on Assigned → Today now show only the signed-in
+  user's own items, not every assignee's.
+- **Checklist: Assign members** list shows about five rows before scrolling internally.
+- **Project menu.** The sidebar "…" menu hides Settings and Members & Permissions from people
+  without Full access, and Archive/Delete Project from non-admins (the server already
+  refused these).
+- **Checklist: Today's Checklists** no longer opens a popup per user; each template shows its
+  users' items inline.
 
 ## [0.4.0] - 2026-10-05
 

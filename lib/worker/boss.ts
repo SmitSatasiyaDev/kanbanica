@@ -4,6 +4,7 @@ import { sanitizeDatabaseUrl } from "@/lib/pg-connection";
 import { sleep } from "@/lib/utils";
 import { ensureJobQueues } from "@/lib/worker/ensure-queues";
 import {
+  DAILY_CHECKLIST_GENERATE_CRON,
   JOB_NAMES,
   SPRINT_AUTO_CLOSE_CRON,
   TRASH_AUTO_PURGE_CRON,
@@ -88,9 +89,13 @@ export async function startWorker() {
   const { handleTrashAutoPurge } = await import(
     "@/lib/worker/handlers/trash-auto-purge"
   );
+  const { handleDailyChecklistGenerate } = await import(
+    "@/lib/worker/handlers/daily-checklist-generate"
+  );
 
   await Promise.all([
     work(JOB_NAMES.TRASH_AUTO_PURGE, handleTrashAutoPurge),
+    work(JOB_NAMES.DAILY_CHECKLIST_GENERATE, handleDailyChecklistGenerate),
     work(JOB_NAMES.EMAIL_SEND, handleEmailSend),
     work(JOB_NAMES.EMAIL_OUTBOX_REAP, handleEmailOutboxReap),
     work(JOB_NAMES.EMAIL_EVENTS_PRUNE, handleEmailEventsPrune),
@@ -114,6 +119,11 @@ export async function startWorker() {
   await boss.schedule(JOB_NAMES.IMPERSONATION_CLEANUP, "*/5 * * * *", {});
   await boss.schedule(JOB_NAMES.SUPPORT_TICKET_AUTO_CLOSE, "0 2 * * *", {});
   await boss.schedule(JOB_NAMES.TRASH_AUTO_PURGE, TRASH_AUTO_PURGE_CRON, {});
+  await boss.schedule(
+    JOB_NAMES.DAILY_CHECKLIST_GENERATE,
+    DAILY_CHECKLIST_GENERATE_CRON,
+    {}
+  );
 
   // Catch-up run: closes sprints that went overdue while the worker was down,
   // without waiting for the next cron slot. The queue's "exclusive" policy
@@ -121,6 +131,8 @@ export async function startWorker() {
   await boss.send(JOB_NAMES.SPRINT_AUTO_CLOSE, {});
   // Same for Trash: purge anything that expired while the worker was offline.
   await boss.send(JOB_NAMES.TRASH_AUTO_PURGE, {});
+  // And Checklist: generate today's Team instances right after boot.
+  await boss.send(JOB_NAMES.DAILY_CHECKLIST_GENERATE, {});
 
   console.log("[worker] handlers registered");
 }

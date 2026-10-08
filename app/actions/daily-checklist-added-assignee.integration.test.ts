@@ -311,6 +311,104 @@ run("Checklist — newly added assignee (real DB)", () => {
     at("2026-10-07T10:00:00Z");
   });
 
+  it("adding a user leaves existing users' status, notes and field values untouched", async () => {
+    const tpl = await make({ assigneeIds: [U.a, U.b] });
+    const [dayA] = await days(tpl, U.a);
+    const [itemA] = await items(dayA.id);
+    await dbm.db
+      .update(S.dailyChecklistItem)
+      .set({ status: "DONE", notes: "n" })
+      .where(eq(S.dailyChecklistItem.id, itemA.id));
+    await dbm.db
+      .update(S.dailyChecklistItemFieldValue)
+      .set({ value: "typed" })
+      .where(eq(S.dailyChecklistItemFieldValue.itemId, itemA.id));
+    const snap = async (dayId: string) => ({
+      items: await items(dayId),
+      vals: await dbm.db
+        .select()
+        .from(S.dailyChecklistItemFieldValue)
+        .where(
+          inArray(
+            S.dailyChecklistItemFieldValue.itemId,
+            (await items(dayId)).map((i: any) => i.id)
+          )
+        ),
+    });
+    const [dayB] = await days(tpl, U.b);
+    const beforeA = await snap(dayA.id);
+    const beforeB = await snap(dayB.id);
+    await addAssignee(tpl, U.dev);
+    expect(await snap(dayA.id)).toEqual(beforeA);
+    expect(await snap(dayB.id)).toEqual(beforeB);
+    // Dev gets blank values, never a copy of A's.
+    const [dayDev] = await days(tpl, U.dev);
+    const devVals = (await snap(dayDev.id)).vals;
+    expect(devVals.length).toBeGreaterThan(0);
+    expect(devVals.every((v: any) => !v.value)).toBe(true);
+  });
+
+  it("creates nothing outside the template's start/end dates", async () => {
+    const notStarted = await make({
+      startDate: "2026-10-09",
+      assigneeIds: [U.a],
+    });
+    await addAssignee(notStarted, U.dev);
+    expect(await days(notStarted, U.dev)).toHaveLength(0);
+    const ended = await make({
+      startDate: "2026-10-01",
+      endDate: "2026-10-06",
+      assigneeIds: [U.a],
+    });
+    await addAssignee(ended, U.dev);
+    expect(await days(ended, U.dev)).toHaveLength(0);
+  });
+
+  it("assignment save racing the worker and on-demand generation yields one day and one item set", async () => {
+    const gen = await import("@/lib/worker/handlers/daily-checklist-generate");
+    const tpl = await make({ assigneeIds: [U.a] });
+    as(U.admin);
+    await Promise.all([
+      adm.updateTemplateAssignments(W, tpl, [U.a, U.dev]),
+      gen.runDailyChecklistGenerate({ now: new Date(), workspaceId: W }),
+      m.getMyTeamChecklist(W), // same session user (admin) — on-demand path
+    ]);
+    await adm.updateTemplateAssignments(W, tpl, [U.a, U.dev]);
+    const ds = await days(tpl, U.dev);
+    expect(ds).toHaveLength(1);
+    expect(await items(ds[0].id)).toHaveLength(2);
+  });
+
+  it("removal keeps earlier history and today's day; re-adding never duplicates", async () => {
+    at("2026-10-06T10:00:00Z");
+    const tpl = await make({ assigneeIds: [U.a, U.dev] });
+    expect((await days(tpl, U.dev)).map((d: any) => d.date)).toEqual([
+      "2026-10-06",
+    ]);
+    at("2026-10-07T10:00:00Z");
+    as(U.dev);
+    await m.getMyTeamChecklist(W); // Oct 7 generated
+    as(U.admin);
+    await adm.updateTemplateAssignments(W, tpl, [U.a]);
+    at("2026-10-08T10:00:00Z");
+    as(U.dev);
+    await m.getMyTeamChecklist(W);
+    expect((await days(tpl, U.dev)).map((d: any) => d.date).sort()).toEqual([
+      "2026-10-06",
+      "2026-10-07",
+    ]);
+    // re-add on Oct 8: creates Oct 8 once, earlier days untouched
+    as(U.admin);
+    await addAssignee(tpl, U.dev);
+    await addAssignee(tpl, U.dev);
+    expect((await days(tpl, U.dev)).map((d: any) => d.date).sort()).toEqual([
+      "2026-10-06",
+      "2026-10-07",
+      "2026-10-08",
+    ]);
+    at("2026-10-07T10:00:00Z");
+  });
+
   it("never generates for guests", async () => {
     const tpl = await make({ assigneeIds: [U.a] });
     as(U.admin);

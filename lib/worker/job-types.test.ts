@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { QUEUE_OPTIONS } from "@/lib/worker/ensure-queues";
 import {
+  DAILY_CHECKLIST_GENERATE_CRON,
   JOB_NAMES,
   SPRINT_AUTO_CLOSE_CRON,
   TRASH_AUTO_PURGE_CRON,
@@ -43,5 +44,42 @@ describe("trash auto-purge job registration", () => {
       "boss.schedule(JOB_NAMES.TRASH_AUTO_PURGE, TRASH_AUTO_PURGE_CRON"
     );
     expect(src).toContain("boss.send(JOB_NAMES.TRASH_AUTO_PURGE");
+  });
+});
+
+describe("daily checklist generate job registration", () => {
+  it("has a queue and the agreed name", () => {
+    expect(JOB_NAMES.DAILY_CHECKLIST_GENERATE).toBe("daily-checklist.generate");
+    expect(QUEUE_OPTIONS[JOB_NAMES.DAILY_CHECKLIST_GENERATE]).toBeDefined();
+  });
+
+  it("runs hourly (the background safety net), not every 30 minutes", () => {
+    expect(DAILY_CHECKLIST_GENERATE_CRON).toBe("0 * * * *");
+    expect(DAILY_CHECKLIST_GENERATE_CRON).not.toBe("*/30 * * * *");
+  });
+
+  it("is registered and scheduled by the worker", () => {
+    const boss = readFileSync(
+      join(process.cwd(), "lib/worker/boss.ts"),
+      "utf8"
+    );
+    expect(boss).toContain(
+      "JOB_NAMES.DAILY_CHECKLIST_GENERATE, handleDailyChecklistGenerate"
+    );
+    expect(boss).toContain("DAILY_CHECKLIST_GENERATE_CRON");
+  });
+
+  it("keeps the boot catch-up and exactly one checklist schedule", () => {
+    const boss = readFileSync(
+      join(process.cwd(), "lib/worker/boss.ts"),
+      "utf8"
+    );
+    expect(boss).toContain(
+      "await boss.send(JOB_NAMES.DAILY_CHECKLIST_GENERATE, {})"
+    );
+    const schedules = boss.match(
+      /boss\.schedule\(\s*JOB_NAMES\.DAILY_CHECKLIST_GENERATE/g
+    );
+    expect(schedules).toHaveLength(1);
   });
 });
