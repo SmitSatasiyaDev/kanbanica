@@ -51,6 +51,11 @@ import {
   templateSchema,
 } from "@/lib/daily-checklist/validation";
 import { db } from "@/lib/db";
+import {
+  notifyChecklistAssigned,
+  notifyChecklistDisabled,
+  notifyChecklistUnassigned,
+} from "@/lib/notifications/checklist";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -98,7 +103,7 @@ async function replaceAssignments(
   workspaceId: string,
   templateId: string,
   userIds: string[]
-): Promise<string | { added: string[] }> {
+): Promise<string | { added: string[]; removed: string[] }> {
   const valid = await filterAssignableUserIds(tx, workspaceId, userIds);
   if (valid.length !== userIds.length) {
     return "One or more selected users are not active members of this workspace";
@@ -129,7 +134,7 @@ async function replaceAssignments(
       )
       .onConflictDoNothing();
   }
-  return { added: add };
+  return { added: add, removed: remove };
 }
 
 // ───────────────────────────── members for the picker ─────────────────────────────
@@ -338,6 +343,13 @@ export async function createChecklistTemplate(
     }
   });
   await generateForAdded(workspaceId, valid);
+  notifyChecklistAssigned({
+    workspaceId,
+    actorId: a.userId,
+    actorName: a.userName,
+    templateName: v.name,
+    userIds: valid,
+  });
   await refreshWorkspace(workspaceId);
   return { id };
 }
@@ -444,6 +456,14 @@ export async function updateChecklistTemplate(
     return { error: result };
   }
   await generateForAdded(workspaceId, result.added);
+  const who = {
+    workspaceId,
+    actorId: a.userId,
+    actorName: a.userName,
+    templateName: v.name,
+  };
+  notifyChecklistAssigned({ ...who, userIds: result.added });
+  notifyChecklistUnassigned({ ...who, userIds: result.removed });
   await refreshWorkspace(workspaceId);
   return { ok: true };
 }
@@ -466,6 +486,17 @@ export async function disableChecklistTemplate(
     .update(dailyChecklistTemplate)
     .set({ isActive: Boolean(isActive), updatedAt: new Date() })
     .where(eq(dailyChecklistTemplate.id, templateId));
+  // Only the active → disabled transition is news (re-enabling and repeats stay silent).
+  if (t.isActive && !isActive) {
+    await notifyChecklistDisabled({
+      workspaceId,
+      actorId: a.userId,
+      actorName: a.userName,
+      deleted: false,
+      templateId,
+      templateName: t.name,
+    });
+  }
   await refreshWorkspace(workspaceId);
   return { ok: true };
 }
@@ -492,6 +523,14 @@ export async function deleteChecklistTemplate(
       updatedAt: new Date(),
     })
     .where(eq(dailyChecklistTemplate.id, templateId));
+  await notifyChecklistDisabled({
+    workspaceId,
+    actorId: a.userId,
+    actorName: a.userName,
+    deleted: true,
+    templateId,
+    templateName: t.name,
+  });
   await refreshWorkspace(workspaceId);
   return { ok: true };
 }
@@ -671,10 +710,13 @@ export async function updateTemplateAssignments(
   ) {
     return { error: "Invalid assignees" };
   }
+  let templateName = "";
   const result = await db.transaction(async (tx) => {
-    if (!(await loadTemplate(tx, workspaceId, templateId))) {
+    const t = await loadTemplate(tx, workspaceId, templateId);
+    if (!t) {
       return "Template not found";
     }
+    templateName = t.name;
     return replaceAssignments(tx, workspaceId, templateId, [
       ...new Set(userIds),
     ]);
@@ -683,6 +725,14 @@ export async function updateTemplateAssignments(
     return { error: result };
   }
   await generateForAdded(workspaceId, result.added);
+  const who = {
+    workspaceId,
+    actorId: a.userId,
+    actorName: a.userName,
+    templateName,
+  };
+  notifyChecklistAssigned({ ...who, userIds: result.added });
+  notifyChecklistUnassigned({ ...who, userIds: result.removed });
   await refreshWorkspace(workspaceId);
   return { ok: true };
 }

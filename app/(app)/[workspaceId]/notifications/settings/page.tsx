@@ -70,6 +70,10 @@ const TRIGGER_LABELS: Record<string, string> = {
   sprint_ending_soon: "Sprint ending soon",
   sprint_closed: "Sprint closed",
   sprint_auto_created: "Sprint auto-created",
+  checklist_assigned: "Checklist assigned",
+  checklist_unassigned: "Checklist unassigned",
+  checklist_disabled: "Checklist disabled",
+  checklist_completed: "Checklist completed",
 };
 
 interface NotifPref {

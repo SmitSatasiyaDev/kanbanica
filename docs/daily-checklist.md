@@ -3,7 +3,7 @@
 A lightweight "what do I need to check off today?" list. It is deliberately **not** a
 second task system: no projects, lists, subtasks, comments, attachments or sprints.
 Sidebar: **Checklist** (below My Tasks) → `/[workspaceId]/daily-checklist`, with
-**My Checklist** and **Team Checklist** tabs. Owner/Admin management lives at
+**Personal** and **Team Checklist** tabs. Owner/Admin management lives at
 `/[workspaceId]/daily-checklist/admin` (bottom user menu → *Checklist admin*, next to
 Trash; not in Workspace Settings).
 
@@ -120,3 +120,35 @@ write a *value* but is out of scope.
 Pure: `lib/daily-checklist/*.test.ts` (incl. `fields.test.ts`), `lib/local-date.test.ts`, migration test. Real-DB
 integration (`app/actions/daily-checklist*.integration.test.ts`) runs only when
 `CHECKLIST_TEST_DATABASE_URL` points at a migrated scratch database — see the file header.
+
+## Admin History tab (report + read-only detail)
+
+`components/daily-checklist/admin/history-report.tsx` is the admin **History** tab: filters (date range, user, template, status; kept in
+the URL), summary cards and a paginated table, all resolved server-side by `getChecklistHistoryReport`
+(`app/actions/daily-checklist-history.ts`, summary-only SQL aggregates, 20 rows/page, CSV export). Pure helpers: `lib/daily-checklist/history-report.ts`.
+**View** toggles a row inline (`InlineDetail` in `history-report.tsx`); applying any filter (cards, dropdowns, date range) auto-expands every row of the new
+result. All open rows load in ONE request, `getChecklistHistoryItems` (≤50 days: snapshot items + custom-field values + assignee timezone). Read-only
+(a disabled checkbox shows done / not done); nothing is generated.
+No time-spent field exists, so the column is omitted. The *Today's Checklists* tab is unchanged.
+
+## Member "Today" views share History's visual language
+
+Assigned → Today (`today-checklists.tsx`) and Personal → Today use the same summary cards (`summary-cards.tsx`), status badge (`DayStatusBadge`),
+table + inline-expand pattern and `max-w-6xl` width as the admin History — but stay ACTIVE: checkboxes / notes / details are the existing
+permission-checked controls and server actions. Assigned groups the viewer's own items per checklist (`lib/daily-checklist/today-view.ts`); one checklist
+is expanded at a time (a lone checklist opens itself).
+
+Admin → Today's Checklists (`admin/today-groups.tsx`) uses the same cards / table / inline-expand pattern: one row per user's checklist today (read-only; items load via `getChecklistHistoryItems`).
+
+## Notifications
+
+Four events go through the shared `createNotifications()` (via `lib/notifications/checklist.ts`). They are stored as `WORKSPACE` notifications (the entity-type enum is closed — no migration) and routed by trigger type in `lib/notifications/target.ts`. The person who made the change is never notified about it.
+
+| Trigger | Recipients | Fired from | Inbox click |
+|---|---|---|---|
+| `checklist_assigned` | newly added assignees | `createChecklistTemplate`, `updateChecklistTemplate`, `updateTemplateAssignments` | Assigned checklist |
+| `checklist_unassigned` | removed assignees | `updateChecklistTemplate`, `updateTemplateAssignments` | Assigned checklist |
+| `checklist_disabled` | current assignees (disable **and** delete; not re-enable) | `disableChecklistTemplate`, `deleteChecklistTemplate` | Assigned checklist |
+| `checklist_completed` | workspace Owners/Admins | `updateTeamChecklistItem` — only when that change marks the day's last item DONE | Admin → Today's Checklists |
+
+Defaults: `checklist_assigned` has email and sound on; the other three are in-app only. Users can change each in Notification Settings.

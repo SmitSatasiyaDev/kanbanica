@@ -1,9 +1,10 @@
 "use client";
 
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useState } from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MemberFilter } from "@/lib/daily-checklist/team-aggregate";
 import { MyChecklistPanel } from "./my-checklist-panel";
+import { type ChecklistScope, ScopePicker } from "./scope-picker";
 import { TeamChecklistPanel } from "./team-checklist-panel";
 import { setUrlParams } from "./url-state";
 
@@ -11,39 +12,46 @@ export function DailyChecklistView({
   workspaceId,
   canSeeTeam,
   isAdmin,
-  initialTab,
+  initialScope,
   initialView,
   initialFilter,
   today,
 }: {
   canSeeTeam: boolean;
   initialFilter: MemberFilter;
-  initialTab: "my" | "team";
+  initialScope: ChecklistScope | null;
   initialView: "today" | "history";
   isAdmin: boolean;
   today: string;
   workspaceId: string;
 }) {
-  const [tab, setTab] = useState<"my" | "team">(canSeeTeam ? initialTab : "my");
+  // Guests only have a personal checklist, so there is nothing to choose.
+  const [scope, setScope] = useState<ChecklistScope | null>(
+    canSeeTeam ? initialScope : "personal"
+  );
 
-  // Remember the chosen tab in the URL so a refresh stays put. Entering the page without a
-  // `tab` param opens "Assigned" (the default for anyone who can see it).
-  function changeTab(next: "my" | "team") {
-    setTab(next);
-    setUrlParams({ tab: next, view: null, filter: null });
+  // The chosen scope lives in the URL so a refresh or a direct link lands on the same checklist.
+  function choose(next: ChecklistScope | null) {
+    setScope(next);
+    setUrlParams({ scope: next, tab: null, view: null, filter: null });
   }
 
   return (
-    <div className="space-y-6">
-      {canSeeTeam && (
-        <Tabs onValueChange={(v) => changeTab(v as "my" | "team")} value={tab}>
-          <TabsList aria-label="Checklist">
-            <TabsTrigger value="my">My Checklist</TabsTrigger>
-            <TabsTrigger value="team">Assigned</TabsTrigger>
-          </TabsList>
-        </Tabs>
+    <div className="mx-auto w-full max-w-6xl space-y-4" data-stable-gutter>
+      {scope && canSeeTeam && (
+        <button
+          className="inline-flex items-center gap-1.5 rounded-md text-base-content/60 text-sm transition-colors hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          onClick={() => choose(null)}
+          type="button"
+        >
+          <ArrowLeftIcon aria-hidden className="size-3.5" />
+          Change checklist
+        </button>
       )}
-      {tab === "my" ? (
+      <h1 className="sr-only">Checklist</h1>
+      {scope === null ? (
+        <ScopePicker onSelect={choose} />
+      ) : scope === "personal" ? (
         <MyChecklistPanel
           initialView={initialView}
           today={today}

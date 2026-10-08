@@ -1,9 +1,6 @@
-import { ArrowLeftIcon } from "@phosphor-icons/react/ssr";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TemplateForm } from "@/components/daily-checklist/admin/template-form";
-import { PageHeader } from "@/components/scaffold/page-header";
 import { PRODUCT_NAME } from "@/config/platform";
 import { auth } from "@/lib/auth";
 import { userToday } from "@/lib/daily-checklist/queries";
@@ -35,18 +32,12 @@ export default async function NewTemplatePage({
   const { today } = await userToday(db, session.user.id, workspaceId);
 
   return (
-    <>
-      <Link
-        className="mb-2 inline-flex items-center gap-1.5 rounded-md text-base-content/60 text-sm hover:text-base-content"
-        href={`/${workspaceId}/daily-checklist/admin`}
-      >
-        <ArrowLeftIcon className="size-4" /> Back to Templates
-      </Link>
-      <PageHeader
-        description="Create a reusable checklist template for recurring work."
-        title="Create template"
-      />
-      <TemplateForm template={null} today={today} workspaceId={workspaceId} />
-    </>
+    <TemplateForm
+      description="Create a reusable checklist template for recurring work."
+      template={null}
+      title="Create template"
+      today={today}
+      workspaceId={workspaceId}
+    />
   );
 }

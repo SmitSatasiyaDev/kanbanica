@@ -1,18 +1,24 @@
 "use client";
 
 import {
+  CalendarBlankIcon,
+  CaretDownIcon,
+  DotsThreeVerticalIcon,
+  ListBulletsIcon,
+  ListChecksIcon,
   PencilSimpleIcon,
   PlusIcon,
   PowerIcon,
   TrashIcon,
+  UsersIcon,
 } from "@phosphor-icons/react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   deleteChecklistTemplate,
   disableChecklistTemplate,
-  getTeamChecklistHistory,
   getTodaysChecklists,
   listChecklistTemplates,
 } from "@/app/actions/daily-checklist-admin";
@@ -25,6 +31,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -33,8 +45,7 @@ import {
 } from "@/lib/daily-checklist/constants";
 import { FIELD_TYPE_LABEL } from "@/lib/daily-checklist/fields";
 import type { TemplateDTO } from "@/lib/daily-checklist/types";
-import { InlineHistory } from "../history-inline";
-import { HistoryList } from "../history-list";
+import { cn } from "@/lib/utils";
 import {
   EmptyState,
   formatLongDate,
@@ -42,49 +53,45 @@ import {
   PriorityTag,
 } from "../shared";
 import { useChecklistData } from "../use-checklist-data";
-import { HistoryDateFilter } from "./history-date-filter";
+import { HistoryReport } from "./history-report";
 import { TodayGroups } from "./today-groups";
 
 type Section = "templates" | "today" | "history";
 
+const SECTIONS: Section[] = ["templates", "today", "history"];
+const HISTORY_PARAMS = ["from", "to", "user", "template", "status", "page"];
+
 export function AdminConsole({
   workspaceId,
-  today,
   initialDate = null,
 }: {
   initialDate?: string | null;
-  today: string;
   workspaceId: string;
 }) {
-  // A valid ?date= in the URL opens History directly, filtered to that date.
+  // ?tab= wins; a legacy ?date= (or any History filter in the URL) opens History directly.
+  const params = useSearchParams();
+  const tab = params.get("tab");
   const [section, setSection] = useState<Section>(
-    initialDate ? "history" : "templates"
+    SECTIONS.find((s) => s === tab) ??
+      (initialDate || HISTORY_PARAMS.some((k) => params.has(k))
+        ? "history"
+        : "templates")
   );
-  const [historyDate, setHistoryDateState] = useState<string | null>(
-    initialDate
-  );
-  const setHistoryDate = (d: string | null) => {
-    setHistoryDateState(d);
+  const changeSection = (next: Section) => {
+    setSection(next);
     const url = new URL(window.location.href);
-    if (d) {
-      url.searchParams.set("date", d);
-    } else {
-      url.searchParams.delete("date");
+    url.searchParams.set("tab", next);
+    if (next !== "history") {
+      for (const k of [...HISTORY_PARAMS, "date"]) {
+        url.searchParams.delete(k);
+      }
     }
     window.history.replaceState(window.history.state, "", url);
   };
-  const fetchHistory = useCallback(
-    (before?: string) =>
-      getTeamChecklistHistory(
-        workspaceId,
-        historyDate ? { date: historyDate } : { before }
-      ),
-    [workspaceId, historyDate]
-  );
 
   return (
-    <div className="space-y-6">
-      <Tabs onValueChange={(v) => setSection(v as Section)} value={section}>
+    <div className="space-y-6" data-stable-gutter>
+      <Tabs onValueChange={(v) => changeSection(v as Section)} value={section}>
         <TabsList
           aria-label="Checklist admin"
           className="max-w-full overflow-x-auto"
@@ -100,27 +107,7 @@ export function AdminConsole({
       )}
       {section === "today" && <TodaySection workspaceId={workspaceId} />}
       {section === "history" && (
-        <div className="space-y-4">
-          <HistoryDateFilter
-            onChange={setHistoryDate}
-            today={today}
-            value={historyDate}
-          />
-          <HistoryList
-            emptyText={
-              historyDate
-                ? `No checklist history for ${formatLongDate(historyDate)}.`
-                : "No team checklist history yet."
-            }
-            fetchPage={fetchHistory}
-            renderRows={(rows) => (
-              <InlineHistory rows={rows} workspaceId={workspaceId} />
-            )}
-            resetKey={historyDate}
-            showTemplate
-            showUser
-          />
-        </div>
+        <HistoryReport initialDate={initialDate} workspaceId={workspaceId} />
       )}
     </div>
   );
@@ -190,109 +177,13 @@ function TemplatesSection({ workspaceId }: { workspaceId: string }) {
       ) : (
         <ul className="space-y-3">
           {data.templates.map((t) => (
-            <li
-              className="space-y-3 rounded-xl border border-base-300 p-4 sm:p-6"
+            <TemplateRow
               key={t.id}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="break-words font-semibold">
-                    {t.name}{" "}
-                    {!t.isActive && (
-                      <span className="ml-1 font-medium text-base-content/60 text-xs">
-                        (Disabled)
-                      </span>
-                    )}
-                  </h2>
-                  {t.description && (
-                    <p className="text-base-content/60 text-sm">
-                      {t.description}
-                    </p>
-                  )}
-                  <p className="mt-1 text-base-content/60 text-xs">
-                    {recurrenceText(t)} · from {formatShortDate(t.startDate)}
-                    {t.endDate ? ` to ${formatShortDate(t.endDate)}` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    aria-label={`Edit ${t.name}`}
-                    asChild
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Link
-                      href={`/${workspaceId}/daily-checklist/admin/templates/${t.id}/edit`}
-                    >
-                      <PencilSimpleIcon className="size-4" /> Edit
-                    </Link>
-                  </Button>
-                  <Button
-                    aria-label={`${t.isActive ? "Disable" : "Re-enable"} ${t.name}`}
-                    onClick={() => toggle(t)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <PowerIcon className="size-4" />{" "}
-                    {t.isActive ? "Disable" : "Enable"}
-                  </Button>
-                  <Button
-                    aria-label={`Delete ${t.name}`}
-                    onClick={() => setDeleting(t)}
-                    size="icon-sm"
-                    variant="ghost"
-                  >
-                    <TrashIcon />
-                  </Button>
-                </div>
-              </div>
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {t.items.map((i) => (
-                  <li key={i.id}>
-                    {i.title} <PriorityTag priority={i.priority} />
-                    {i.dueTime && (
-                      <span className="ml-2 text-base-content/60 text-xs">
-                        Due {i.dueTime}
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {t.items.length === 0 && (
-                  <li className="list-none text-base-content/60">
-                    No items yet
-                  </li>
-                )}
-              </ol>
-              {t.fields.length > 0 && (
-                <p className="text-base-content/70 text-xs">
-                  <span className="font-medium">Custom fields:</span>{" "}
-                  {t.fields
-                    .map((f) => `${f.name} (${FIELD_TYPE_LABEL[f.type]})`)
-                    .join(", ")}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                {t.assignees.length === 0 && (
-                  <span className="text-base-content/60 text-xs">
-                    No one assigned
-                  </span>
-                )}
-                {t.assignees.map((a) => (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-full border border-base-300 py-0.5 pr-2.5 pl-1 text-xs"
-                    key={a.userId}
-                  >
-                    <UserAvatar
-                      email={a.email}
-                      image={a.image}
-                      name={a.name}
-                      size="xs"
-                    />
-                    {a.name || a.email}
-                  </span>
-                ))}
-              </div>
-            </li>
+              onDelete={() => setDeleting(t)}
+              onToggle={() => toggle(t)}
+              t={t}
+              workspaceId={workspaceId}
+            />
           ))}
         </ul>
       )}
@@ -348,6 +239,184 @@ function TemplatesSection({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+/** One compact template row; items, custom fields and assignees fold open under the chevron. */
+function TemplateRow({
+  t,
+  workspaceId,
+  onToggle,
+  onDelete,
+}: {
+  onDelete: () => void;
+  onToggle: () => void;
+  t: TemplateDTO;
+  workspaceId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="rounded-xl border border-base-300 bg-elevated">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+        <span
+          aria-hidden
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
+        >
+          <ListChecksIcon className="size-5" weight="fill" />
+        </span>
+        <div className="min-w-0 flex-1 basis-56">
+          <h2 className="break-words font-semibold">{t.name}</h2>
+          {t.description && (
+            <p className="truncate text-base-content/60 text-sm">
+              {t.description}
+            </p>
+          )}
+          <p className="mt-0.5 flex items-center gap-1.5 text-base-content/60 text-xs">
+            <CalendarBlankIcon aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {recurrenceText(t)} · from {formatShortDate(t.startDate)}
+              {t.endDate ? ` to ${formatShortDate(t.endDate)}` : ""}
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center gap-5 text-base-content/60 text-xs">
+          <span className="flex items-center gap-2">
+            <ListBulletsIcon aria-hidden className="size-5" />
+            <span>
+              <span className="block font-semibold text-base-content text-sm tabular-nums">
+                {t.items.length}
+              </span>
+              Tasks
+            </span>
+          </span>
+          <span className="flex items-center gap-2 border-base-300 border-l pl-5">
+            <UsersIcon aria-hidden className="size-5" />
+            <span>
+              <span className="block font-semibold text-base-content text-sm tabular-nums">
+                {t.assignees.length}
+              </span>
+              Assigned
+            </span>
+          </span>
+        </div>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium text-xs",
+            t.isActive
+              ? "bg-success/15 text-success"
+              : "bg-base-200 text-base-content/70"
+          )}
+        >
+          <span aria-hidden className="size-1.5 rounded-full bg-current" />
+          {t.isActive ? "Active" : "Inactive"}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            aria-label={`Edit ${t.name}`}
+            asChild
+            size="sm"
+            variant="outline"
+          >
+            <Link
+              href={`/${workspaceId}/daily-checklist/admin/templates/${t.id}/edit`}
+            >
+              <PencilSimpleIcon className="size-4" /> Edit
+            </Link>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label={`More actions for ${t.name}`}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <DotsThreeVerticalIcon weight="bold" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                aria-label={`${t.isActive ? "Disable" : "Re-enable"} ${t.name}`}
+                onClick={onToggle}
+              >
+                <PowerIcon />
+                {t.isActive ? "Disable" : "Enable"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                aria-label={`Delete ${t.name}`}
+                onClick={onDelete}
+                variant="destructive"
+              >
+                <TrashIcon />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            aria-controls={`tpl-${t.id}`}
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} details: ${t.name}`}
+            onClick={() => setOpen((o) => !o)}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <CaretDownIcon
+              className={cn("transition-transform", open && "rotate-180")}
+            />
+          </Button>
+        </div>
+      </div>
+      {open && (
+        <div
+          className="space-y-3 border-base-300 border-t px-4 py-3"
+          id={`tpl-${t.id}`}
+        >
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            {t.items.map((i) => (
+              <li key={i.id}>
+                {i.title} <PriorityTag priority={i.priority} />
+                {i.dueTime && (
+                  <span className="ml-2 text-base-content/60 text-xs">
+                    Due {i.dueTime}
+                  </span>
+                )}
+              </li>
+            ))}
+            {t.items.length === 0 && (
+              <li className="list-none text-base-content/60">No items yet</li>
+            )}
+          </ol>
+          {t.fields.length > 0 && (
+            <p className="text-base-content/70 text-xs">
+              <span className="font-medium">Custom fields:</span>{" "}
+              {t.fields
+                .map((f) => `${f.name} (${FIELD_TYPE_LABEL[f.type]})`)
+                .join(", ")}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {t.assignees.length === 0 && (
+              <span className="text-base-content/60 text-xs">
+                No one assigned
+              </span>
+            )}
+            {t.assignees.map((a) => (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full border border-base-300 py-0.5 pr-2.5 pl-1 text-xs"
+                key={a.userId}
+              >
+                <UserAvatar
+                  email={a.email}
+                  image={a.image}
+                  name={a.name}
+                  size="xs"
+                />
+                {a.name || a.email}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function TodaySection({ workspaceId }: { workspaceId: string }) {
   const { data, error, loading } = useChecklistData(
     () => getTodaysChecklists(workspaceId),
@@ -372,8 +441,13 @@ function TodaySection({ workspaceId }: { workspaceId: string }) {
     );
   }
   return (
-    <section aria-label="Today's checklists" className="space-y-3">
-      <h2 className="font-semibold">{formatLongDate(data.date)}</h2>
+    <section aria-label="Today's checklists" className="space-y-5">
+      <div>
+        <h2 className="font-semibold text-xl">Today's Checklists</h2>
+        <p className="text-base-content/60 text-sm">
+          {formatLongDate(data.date)} · track team progress as it happens
+        </p>
+      </div>
       <TodayGroups
         date={data.date}
         rows={data.rows}

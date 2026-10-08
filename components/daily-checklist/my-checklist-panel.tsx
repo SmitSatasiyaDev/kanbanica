@@ -3,7 +3,10 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  CaretLeftIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  CircleHalfIcon,
+  ListChecksIcon,
   PencilSimpleIcon,
   PlusIcon,
   TrashIcon,
@@ -32,17 +35,21 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LIMITS } from "@/lib/daily-checklist/constants";
+import { dayStatus } from "@/lib/daily-checklist/progress";
 import type { ChecklistItemDTO } from "@/lib/daily-checklist/types";
 import { cn } from "@/lib/utils";
 import { HistoryWithDateFilter } from "./history-with-date-filter";
 import { ItemEditDialog, type ItemEditValues } from "./item-edit-dialog";
+import { MemberHistoryTable } from "./member-history";
 import {
+  DayStatusBadge,
   EmptyState,
   formatLongDate,
   PriorityTag,
-  ProgressSummary,
   StatusLabel,
 } from "./shared";
+import { SummaryCardGrid } from "./summary-cards";
+import { CountUnit } from "./today-checklists";
 import { setUrlParams } from "./url-state";
 import { useChecklistData } from "./use-checklist-data";
 
@@ -56,36 +63,33 @@ export function MyChecklistPanel({
   workspaceId: string;
 }) {
   const [sub, setSub] = useState<"today" | "history">(initialView);
-  // null = today. A past date opens read-only straight from the saved day.
-  const [viewDate, setViewDate] = useState<string | null>(null);
 
   return (
-    <div className="space-y-5">
-      <Tabs
-        onValueChange={(v) => {
-          setSub(v as "today" | "history");
-          setUrlParams({ view: v });
-          setViewDate(null);
-        }}
-        value={sub}
-      >
-        <TabsList aria-label="My checklist views">
-          <TabsTrigger value="today">Today</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Tabs
+          onValueChange={(v) => {
+            setSub(v as "today" | "history");
+            setUrlParams({ view: v });
+          }}
+          value={sub}
+        >
+          <TabsList aria-label="Personal checklist views">
+            <TabsTrigger value="today">Today</TabsTrigger>
+            <TabsTrigger value="history">My History</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
-      {sub === "today" || viewDate ? (
-        <DayView
-          onBack={viewDate ? () => setViewDate(null) : undefined}
-          viewDate={viewDate}
-          workspaceId={workspaceId}
-        />
+      {sub === "today" ? (
+        <DayView workspaceId={workspaceId} />
       ) : (
         <HistoryWithDateFilter
           emptyText="No history yet. Past days appear here."
           fetch={(o) => getMyChecklistHistory(workspaceId, o)}
-          onOpen={(r) => setViewDate(r.date)}
+          renderRows={(rows) => (
+            <MemberHistoryTable rows={rows} workspaceId={workspaceId} />
+          )}
           today={today}
         />
       )}
@@ -93,18 +97,11 @@ export function MyChecklistPanel({
   );
 }
 
-function DayView({
-  workspaceId,
-  viewDate,
-  onBack,
-}: {
-  onBack?: () => void;
-  viewDate: string | null;
-  workspaceId: string;
-}) {
+/** Today's personal checklist — the only editable one; past days are read-only in History. */
+function DayView({ workspaceId }: { workspaceId: string }) {
   const { data, error, loading, reload } = useChecklistData(
-    () => getMyChecklist(workspaceId, viewDate ?? undefined),
-    [workspaceId, viewDate]
+    () => getMyChecklist(workspaceId),
+    [workspaceId]
   );
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
@@ -128,6 +125,11 @@ function DayView({
   }
 
   const { items, editable } = data;
+  const dayState = dayStatus(
+    data.progress.completed,
+    data.progress.total,
+    items.some((i) => i.status === "IN_PROGRESS")
+  );
 
   async function run(
     p: Promise<{ error: string } | object>,
@@ -179,11 +181,6 @@ function DayView({
 
   return (
     <section aria-labelledby="cl-day-heading" className="space-y-4">
-      {onBack && (
-        <Button onClick={onBack} size="sm" variant="ghost">
-          <CaretLeftIcon className="size-4" /> Back to history
-        </Button>
-      )}
       <div>
         <h2 className="font-bold text-xl" id="cl-day-heading">
           {formatLongDate(data.date)}
@@ -192,7 +189,40 @@ function DayView({
           <p className="text-base-content/60 text-xs">Read-only history</p>
         )}
       </div>
-      <ProgressSummary {...data.progress} />
+      <SummaryCardGrid
+        cards={[
+          {
+            label: "Tasks done",
+            value: `${data.progress.completed} / ${data.progress.total}`,
+            Icon: CheckCircleIcon,
+            tone: "bg-success/15 text-success",
+          },
+          {
+            label: "In progress",
+            value: items.filter((i) => i.status === "IN_PROGRESS").length,
+            Icon: CircleHalfIcon,
+            tone: "bg-info/15 text-info",
+          },
+          {
+            label: "Pending",
+            value: items.filter((i) => i.status === "PENDING").length,
+            Icon: CircleDashedIcon,
+            tone: "bg-base-200 text-base-content/70",
+          },
+          {
+            label: "Complete",
+            value: (
+              <CountUnit
+                n={dayState === "COMPLETE" ? 1 : 0}
+                one="checklist"
+                other="checklists"
+              />
+            ),
+            Icon: ListChecksIcon,
+            tone: "bg-primary/15 text-primary",
+          },
+        ]}
+      />
 
       {editable && (
         <form className="flex gap-2" onSubmit={add}>
@@ -226,84 +256,96 @@ function DayView({
           />
         )
       ) : (
-        <ul
-          className="divide-y divide-base-300 overflow-hidden rounded-xl border border-base-300"
-          data-testid="checklist-items"
-        >
-          {items.map((it, i) => (
-            <li className="flex items-start gap-3 px-4 py-3" key={it.id}>
-              <Checkbox
-                aria-label={`${it.status === "DONE" ? "Mark incomplete" : "Mark complete"}: ${it.title}`}
-                checked={it.status === "DONE"}
-                className="mt-0.5"
-                disabled={!editable}
-                onCheckedChange={() =>
-                  run(toggleChecklistItem(workspaceId, it.id))
-                }
-              />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p
-                  className={cn(
-                    "break-words text-sm",
-                    it.status === "DONE" && "text-base-content/60 line-through"
-                  )}
-                >
-                  {it.title}
-                </p>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base-content/60 text-xs">
-                  {it.status === "IN_PROGRESS" && (
-                    <StatusLabel status={it.status} />
-                  )}
-                  <PriorityTag priority={it.priority} />
-                  {it.dueTime && <span>Due {it.dueTime}</span>}
-                </div>
-                {it.notes && (
-                  <p className="break-words text-base-content/70 text-xs">
-                    {it.notes}
+        <div className="overflow-hidden rounded-xl border border-base-300">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-base-200/40 px-4 py-2.5">
+            <p className="font-semibold text-sm">Daily checklist</p>
+            <span className="flex items-center gap-3 text-sm">
+              <span className="font-medium tabular-nums">
+                {data.progress.completed} / {data.progress.total}
+              </span>
+              <DayStatusBadge status={dayState} />
+            </span>
+          </div>
+          <ul
+            className="divide-y divide-base-300 border-base-300 border-t"
+            data-testid="checklist-items"
+          >
+            {items.map((it, i) => (
+              <li className="flex items-start gap-3 px-4 py-3" key={it.id}>
+                <Checkbox
+                  aria-label={`${it.status === "DONE" ? "Mark incomplete" : "Mark complete"}: ${it.title}`}
+                  checked={it.status === "DONE"}
+                  className="mt-0.5"
+                  disabled={!editable}
+                  onCheckedChange={() =>
+                    run(toggleChecklistItem(workspaceId, it.id))
+                  }
+                />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p
+                    className={cn(
+                      "break-words text-sm",
+                      it.status === "DONE" &&
+                        "text-base-content/60 line-through"
+                    )}
+                  >
+                    {it.title}
                   </p>
-                )}
-              </div>
-              {editable && (
-                <div className="flex shrink-0 items-center">
-                  <Button
-                    aria-label={`Move up: ${it.title}`}
-                    disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <ArrowUpIcon />
-                  </Button>
-                  <Button
-                    aria-label={`Move down: ${it.title}`}
-                    disabled={i === items.length - 1}
-                    onClick={() => move(i, 1)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <ArrowDownIcon />
-                  </Button>
-                  <Button
-                    aria-label={`Edit: ${it.title}`}
-                    onClick={() => setEditing(it)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <PencilSimpleIcon />
-                  </Button>
-                  <Button
-                    aria-label={`Delete: ${it.title}`}
-                    onClick={() => setDeleting(it)}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <TrashIcon />
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base-content/60 text-xs">
+                    {it.status === "IN_PROGRESS" && (
+                      <StatusLabel status={it.status} />
+                    )}
+                    <PriorityTag priority={it.priority} />
+                    {it.dueTime && <span>Due {it.dueTime}</span>}
+                  </div>
+                  {it.notes && (
+                    <p className="break-words text-base-content/70 text-xs">
+                      {it.notes}
+                    </p>
+                  )}
                 </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                {editable && (
+                  <div className="flex shrink-0 items-center">
+                    <Button
+                      aria-label={`Move up: ${it.title}`}
+                      disabled={i === 0}
+                      onClick={() => move(i, -1)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <ArrowUpIcon />
+                    </Button>
+                    <Button
+                      aria-label={`Move down: ${it.title}`}
+                      disabled={i === items.length - 1}
+                      onClick={() => move(i, 1)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <ArrowDownIcon />
+                    </Button>
+                    <Button
+                      aria-label={`Edit: ${it.title}`}
+                      onClick={() => setEditing(it)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <PencilSimpleIcon />
+                    </Button>
+                    <Button
+                      aria-label={`Delete: ${it.title}`}
+                      onClick={() => setDeleting(it)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <TrashIcon />
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <ItemEditDialog

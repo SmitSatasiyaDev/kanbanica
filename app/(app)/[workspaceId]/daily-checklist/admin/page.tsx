@@ -4,9 +4,7 @@ import { AdminConsole } from "@/components/daily-checklist/admin/admin-console";
 import { PageHeader } from "@/components/scaffold/page-header";
 import { PRODUCT_NAME } from "@/config/platform";
 import { auth } from "@/lib/auth";
-import { userToday } from "@/lib/daily-checklist/queries";
 import { dateSchema } from "@/lib/daily-checklist/validation";
-import { db } from "@/lib/db";
 import { getWorkspaceMembership } from "@/lib/permissions";
 
 interface AdminPageProps {
@@ -33,22 +31,19 @@ export default async function DailyChecklistAdminPage({
     redirect(`/${workspaceId}/daily-checklist`);
   }
 
-  // The admin's own "today" bounds the history date picker; an invalid ?date= is ignored.
-  const { today } = await userToday(db, session.user.id, workspaceId);
+  // An invalid legacy ?date= is ignored (the History report bounds its own dates server-side).
   const initialDate = date && dateSchema.safeParse(date).success ? date : null;
 
+  // ONE container for the whole page (header, tabs and every tab's content) so they share the
+  // same left/right edges — tab content must not add its own max-width.
   return (
-    <>
+    <div className="mx-auto w-full max-w-6xl">
       <PageHeader
         description="Create reusable checklist templates for recurring work. Assign them to people and choose when they should repeat. Past checklist days remain unchanged."
         eyebrow="Admin Console"
         title="Checklist"
       />
-      <AdminConsole
-        initialDate={initialDate}
-        today={today}
-        workspaceId={workspaceId}
-      />
-    </>
+      <AdminConsole initialDate={initialDate} workspaceId={workspaceId} />
+    </div>
   );
 }

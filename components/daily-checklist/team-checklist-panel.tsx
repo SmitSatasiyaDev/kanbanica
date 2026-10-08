@@ -4,41 +4,27 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+  getMyHistoryTemplates,
   getMyTeamChecklist,
   getMyTeamChecklistHistory,
   updateTeamChecklistItem,
 } from "@/app/actions/daily-checklist";
-import { UserAvatar } from "@/components/common/user-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ChecklistStatus } from "@/lib/daily-checklist/constants";
 import {
   filterMyRows,
   type MemberFilter,
+  myRows,
   normalizeMemberFilter,
 } from "@/lib/daily-checklist/team-aggregate";
 import type { TeamItemRow } from "@/lib/daily-checklist/types";
-import { cn } from "@/lib/utils";
-import { InlineHistory } from "./history-inline";
 import { HistoryWithDateFilter } from "./history-with-date-filter";
 import { ItemDetailDialog } from "./item-detail-dialog";
 import { ItemNoteDialog } from "./item-note-dialog";
-import { EmptyState, formatLongDate, PriorityTag } from "./shared";
-import {
-  DetailsButton,
-  DueLabel,
-  FieldSummary,
-  NoteButton,
-  RowCheckbox,
-} from "./team-row-parts";
+import { MemberHistoryTable } from "./member-history";
+import { EmptyState, formatLongDate } from "./shared";
+import { TodayChecklists } from "./today-checklists";
 import { setUrlParams } from "./url-state";
 import { useChecklistData } from "./use-checklist-data";
 
@@ -78,8 +64,8 @@ export function TeamChecklistPanel({
   const empty = rows.length === 0;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Tabs
           onValueChange={(v) => {
             setSub(v as "today" | "history");
@@ -89,12 +75,12 @@ export function TeamChecklistPanel({
         >
           <TabsList aria-label="Team checklist views">
             <TabsTrigger value="today">Today</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="history">My History</TabsTrigger>
           </TabsList>
         </Tabs>
         {isAdmin && (
           <Link
-            className="text-primary text-sm underline-offset-4 hover:underline"
+            className="ml-auto text-primary text-sm underline-offset-4 hover:underline"
             href={`/${workspaceId}/daily-checklist/admin`}
           >
             Manage templates &amp; team progress
@@ -106,12 +92,9 @@ export function TeamChecklistPanel({
         <HistoryWithDateFilter
           emptyText="No team checklist history yet."
           fetch={(o) => getMyTeamChecklistHistory(workspaceId, o)}
+          loadTemplates={() => getMyHistoryTemplates(workspaceId)}
           renderRows={(rows) => (
-            <InlineHistory
-              rows={rows}
-              variant="self"
-              workspaceId={workspaceId}
-            />
+            <MemberHistoryTable rows={rows} workspaceId={workspaceId} />
           )}
           showTemplate
           today={today}
@@ -150,11 +133,17 @@ export function TeamChecklistPanel({
           ) : empty ? (
             <EmptyState title="Nothing matches this filter." />
           ) : (
-            <MyRowsView
+            <TodayChecklists
+              allRows={myRows(allRows)}
+              filter={filter}
               onDetails={setDetailId}
+              onFilterChange={(f) => {
+                setFilter(f);
+                setUrlParams({ filter: f });
+              }}
               onNote={setNoteId}
               onStatus={setStatus}
-              rows={rows}
+              visibleRows={rows}
             />
           )}
         </section>
@@ -189,124 +178,5 @@ export function TeamChecklistPanel({
         );
       })()}
     </div>
-  );
-}
-
-/** The viewer's own items, one row per item (unchanged from before aggregation). */
-function MyRowsView({
-  rows,
-  onDetails,
-  onNote,
-  onStatus,
-}: {
-  onDetails: (id: string) => void;
-  onNote: (id: string) => void;
-  onStatus: (row: TeamItemRow, s: ChecklistStatus) => void;
-  rows: TeamItemRow[];
-}) {
-  return (
-    <>
-      <div className="hidden overflow-hidden rounded-xl border border-base-300 md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10">
-                <span className="sr-only">Done</span>
-              </TableHead>
-              <TableHead>Checklist item</TableHead>
-              <TableHead>Assignee</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Due</TableHead>
-              <TableHead className="w-16">
-                <span className="sr-only">Note</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="w-10">
-                  <RowCheckbox
-                    className="mt-0"
-                    onChange={(st) => onStatus(r, st)}
-                    row={r}
-                  />
-                </TableCell>
-                <TableCell className="max-w-xs">
-                  <p
-                    className={cn(
-                      "break-words",
-                      r.status === "DONE" && "text-base-content/60 line-through"
-                    )}
-                  >
-                    {r.title}
-                  </p>
-                  <FieldSummary row={r} />
-                  <DetailsButton onOpen={() => onDetails(r.id)} row={r} />
-                  {r.templateName && (
-                    <p className="text-base-content/60 text-xs">
-                      {r.templateName}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="inline-flex items-center gap-2">
-                    <UserAvatar
-                      email=""
-                      image={r.assigneeImage}
-                      name={r.assigneeName}
-                      size="xs"
-                    />
-                    {r.assigneeName}
-                    <span className="text-base-content/60 text-xs">(you)</span>
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <PriorityTag priority={r.priority} />
-                </TableCell>
-                <TableCell>
-                  <DueLabel dueTime={r.dueTime} rows={[r]} />
-                </TableCell>
-                <TableCell className="align-top">
-                  <NoteButton onOpen={() => onNote(r.id)} row={r} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="space-y-2 md:hidden">
-        {rows.map((r) => (
-          <li
-            className="space-y-2 rounded-xl border border-base-300 p-4"
-            key={r.id}
-          >
-            <div className="flex items-start gap-3">
-              <RowCheckbox onChange={(st) => onStatus(r, st)} row={r} />
-              <p
-                className={cn(
-                  "min-w-0 flex-1 break-words font-medium text-sm",
-                  r.status === "DONE" && "text-base-content/60 line-through"
-                )}
-              >
-                {r.title}
-              </p>
-              <NoteButton onOpen={() => onNote(r.id)} row={r} />
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base-content/70 text-xs">
-              <span>{r.assigneeName} (you)</span>
-              <PriorityTag priority={r.priority} />
-              {r.dueTime && (
-                <span>
-                  <DueLabel dueTime={r.dueTime} prefix="Due " rows={[r]} />
-                </span>
-              )}
-            </div>
-            <FieldSummary row={r} />
-            <DetailsButton onOpen={() => onDetails(r.id)} row={r} />
-          </li>
-        ))}
-      </ul>
-    </>
   );
 }

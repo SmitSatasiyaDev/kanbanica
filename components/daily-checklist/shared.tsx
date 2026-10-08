@@ -2,8 +2,8 @@ import {
   CheckCircleIcon,
   CircleDashedIcon,
   CircleHalfIcon,
+  WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { Progress } from "@/components/ui/progress";
 import type {
   ChecklistPriority,
   ChecklistStatus,
@@ -129,29 +129,6 @@ export function DayStatusLabel({ status }: { status: DayStatus }) {
   );
 }
 
-export function ProgressSummary({
-  completed,
-  total,
-  percent,
-}: {
-  completed: number;
-  total: number;
-  percent: number;
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="font-medium text-sm" data-testid="checklist-progress">
-        {completed} of {total} completed · {percent}%
-      </p>
-      <Progress
-        aria-label="Checklist progress"
-        className="h-1.5"
-        value={percent}
-      />
-    </div>
-  );
-}
-
 export function EmptyState({
   title,
   description,
@@ -169,5 +146,62 @@ export function EmptyState({
       )}
       {children}
     </div>
+  );
+}
+
+/** "9:16 AM" in the given IANA timezone (null when there is no / an invalid timestamp). */
+export function formatTimeIn(iso: string | null, timeZone?: string) {
+  if (!iso) {
+    return null;
+  }
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: timeZone || undefined,
+    }).format(new Date(iso));
+  } catch {
+    return null;
+  }
+}
+
+const DAY_BADGE_LABEL: Record<DayStatus, string> = {
+  COMPLETE: "Completed",
+  IN_PROGRESS: "In Progress",
+  NOT_STARTED: "Not Started",
+  EMPTY: "No items",
+};
+
+/** The History status badge (pill), shared by History and Today. */
+export function DayStatusBadge({
+  status,
+  overdue = false,
+}: {
+  overdue?: boolean;
+  status: DayStatus;
+}) {
+  const tone =
+    status === "COMPLETE"
+      ? "bg-success/15 text-success"
+      : status === "IN_PROGRESS"
+        ? "bg-warning/20 text-warning"
+        : "bg-base-200 text-base-content/70";
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span
+        className={cn(
+          "inline-flex items-center rounded-md px-2 py-0.5 font-medium text-xs",
+          tone
+        )}
+      >
+        {DAY_BADGE_LABEL[status]}
+      </span>
+      {overdue && (
+        <span className="inline-flex items-center gap-1 rounded-md bg-error/15 px-2 py-0.5 font-medium text-error text-xs">
+          <WarningCircleIcon aria-hidden className="size-3" weight="fill" />
+          Overdue
+        </span>
+      )}
+    </span>
   );
 }

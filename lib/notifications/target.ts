@@ -49,6 +49,24 @@ export function getNotificationTarget(
     return { type: "route", href: `/invite/${n.entityId}` };
   }
 
+  // Checklist events (stored as WORKSPACE notifications): open the checklist pages.
+  if (
+    n.triggerType === "checklist_assigned" ||
+    n.triggerType === "checklist_unassigned" ||
+    n.triggerType === "checklist_disabled"
+  ) {
+    return {
+      type: "route",
+      href: `/${n.workspaceId}/daily-checklist?scope=assigned`,
+    };
+  }
+  if (n.triggerType === "checklist_completed") {
+    return {
+      type: "route",
+      href: `/${n.workspaceId}/daily-checklist/admin?tab=today`,
+    };
+  }
+
   switch (n.entityType) {
     case "TASK":
       return { type: "task" };

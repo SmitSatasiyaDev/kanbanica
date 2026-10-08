@@ -1,10 +1,7 @@
-import { ArrowLeftIcon } from "@phosphor-icons/react/ssr";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { listChecklistTemplates } from "@/app/actions/daily-checklist-admin";
 import { TemplateForm } from "@/components/daily-checklist/admin/template-form";
-import { PageHeader } from "@/components/scaffold/page-header";
 import { PRODUCT_NAME } from "@/config/platform";
 import { auth } from "@/lib/auth";
 import { userToday } from "@/lib/daily-checklist/queries";
@@ -41,23 +38,13 @@ export default async function EditTemplatePage({
   const { today } = await userToday(db, session.user.id, workspaceId);
 
   return (
-    <>
-      <Link
-        className="mb-2 inline-flex items-center gap-1.5 rounded-md text-base-content/60 text-sm hover:text-base-content"
-        href={`/${workspaceId}/daily-checklist/admin`}
-      >
-        <ArrowLeftIcon className="size-4" /> Back to Templates
-      </Link>
-      <PageHeader
-        description="Changes apply to future days only — past days keep what they were generated with."
-        title="Edit template"
-      />
-      <TemplateForm
-        key={template.id}
-        template={template}
-        today={today}
-        workspaceId={workspaceId}
-      />
-    </>
+    <TemplateForm
+      description="Changes apply to future days only — past days keep what they were generated with."
+      key={template.id}
+      template={template}
+      title="Edit template"
+      today={today}
+      workspaceId={workspaceId}
+    />
   );
 }

@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DailyChecklistView } from "@/components/daily-checklist/daily-checklist-view";
 import { TimezoneAutoDetect } from "@/components/daily-checklist/timezone-auto-detect";
-import { PageHeader } from "@/components/scaffold/page-header";
 import { PRODUCT_NAME } from "@/config/platform";
 import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
@@ -14,7 +13,12 @@ import { getWorkspaceMembership } from "@/lib/permissions";
 
 interface DailyChecklistPageProps {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ filter?: string; tab?: string; view?: string }>;
+  searchParams: Promise<{
+    filter?: string;
+    scope?: string;
+    tab?: string;
+    view?: string;
+  }>;
 }
 
 export const metadata = { title: `Checklist — ${PRODUCT_NAME}` };
@@ -24,7 +28,7 @@ export default async function DailyChecklistPage({
   searchParams,
 }: DailyChecklistPageProps) {
   const { workspaceId } = await params;
-  const { tab, view, filter } = await searchParams;
+  const { scope, tab, view, filter } = await searchParams;
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -44,19 +48,23 @@ export default async function DailyChecklistPage({
     .from(user)
     .where(eq(user.id, session.user.id));
 
+  // `scope` picks the checklist; the legacy `tab` param (my | team) still maps onto it.
+  const initialScope =
+    scope === "personal" || tab === "my"
+      ? "personal"
+      : scope === "assigned" || tab === "team"
+        ? "assigned"
+        : null;
+
   const { today } = await userToday(db, session.user.id, workspaceId);
 
   return (
     <>
       {!u?.timezone && <TimezoneAutoDetect />}
-      <PageHeader
-        description="What do I need to check off today?"
-        title="Checklist"
-      />
       <DailyChecklistView
         canSeeTeam={canSeeTeam}
         initialFilter={normalizeMemberFilter(filter)}
-        initialTab={tab === "my" ? "my" : "team"}
+        initialScope={initialScope}
         initialView={view === "history" ? "history" : "today"}
         isAdmin={isAdmin}
         today={today}

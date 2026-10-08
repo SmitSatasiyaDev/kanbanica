@@ -154,3 +154,65 @@ export interface TodayInstanceRow {
   userImage: string | null;
   userName: string;
 }
+
+/** Admin → Checklist → History (report): server-side filters. All optional; dates are plain YYYY-MM-DD. */
+export type HistoryReportStatus = "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED";
+
+export interface HistoryReportFilters {
+  from?: string;
+  page?: number;
+  status?: HistoryReportStatus;
+  templateId?: string;
+  to?: string;
+  userId?: string;
+}
+
+/** One saved Team day, summary only (no items) — items load when "View" is opened. */
+export interface HistoryReportRow {
+  completed: number;
+  date: string;
+  dayId: string;
+  /** First non-empty item note of the day (full text; the UI truncates). */
+  note: string | null;
+  /** Incomplete AND the checklist date is before the admin's today. */
+  overdue: boolean;
+  status: DayStatus;
+  templateId: string | null;
+  templateName: string | null;
+  total: number;
+  userId: string;
+  userImage: string | null;
+  userName: string | null;
+}
+
+export interface HistoryReportSummary {
+  /** Checklists (days) fully done / started-but-unfinished / nothing started. */
+  completed: number;
+  inProgress: number;
+  /** Distinct people with at least one checklist in the filtered result. */
+  members: number;
+  notStarted: number;
+}
+
+export interface HistoryReportResult {
+  /** The filters actually applied (defaults filled in). */
+  filters: Required<Pick<HistoryReportFilters, "from" | "to">> &
+    Omit<HistoryReportFilters, "from" | "to" | "page">;
+  members: { id: string; name: string }[];
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  rows: HistoryReportRow[];
+  summary: HistoryReportSummary;
+  templates: { id: string; name: string }[];
+  today: string;
+  total: number;
+}
+
+/** Admin → History → expanded row: one saved Team day's snapshot items (read-only). */
+export interface HistoryItemsResult {
+  dayId: string;
+  items: ChecklistItemDTO[];
+  /** The assignee's effective timezone — completion times are shown in it. */
+  timezone: string;
+}

@@ -7,7 +7,7 @@ import type { ChecklistStatus } from "@/lib/daily-checklist/constants";
 import { summarizeFieldValues } from "@/lib/daily-checklist/field-summary";
 import { isRowOverdue } from "@/lib/daily-checklist/overdue";
 import { hasNote } from "@/lib/daily-checklist/team-aggregate";
-import type { TeamItemRow } from "@/lib/daily-checklist/types";
+import type { FieldValueDTO, TeamItemRow } from "@/lib/daily-checklist/types";
 import { cn } from "@/lib/utils";
 import { useNow } from "./use-now";
 
@@ -40,6 +40,42 @@ export function FieldSummary({ row }: { row: TeamItemRow }) {
   );
 }
 
+const INLINE_FIELDS = 2;
+
+/** One-line variant of FieldSummary for compact rows: first values inline, the rest as "+N fields". */
+export function InlineFields({ fields }: { fields?: FieldValueDTO[] }) {
+  const entries = summarizeFieldValues(fields);
+  if (entries.length === 0) {
+    return null;
+  }
+  const shown = entries.slice(0, INLINE_FIELDS);
+  const more = entries.length - shown.length;
+  return (
+    <span
+      className="flex min-w-0 max-w-full items-center gap-x-2"
+      data-testid="field-summary"
+    >
+      <span
+        className="truncate"
+        title={entries.map((e) => `${e.label}: ${e.text}`).join(" · ")}
+      >
+        {shown.map((e, i) => (
+          <span key={e.id}>
+            {i > 0 && " · "}
+            <span>{e.label}:</span>{" "}
+            <span className="text-base-content/80">{e.text}</span>
+          </span>
+        ))}
+      </span>
+      {more > 0 && (
+        <span className="shrink-0 whitespace-nowrap">
+          +{more} {more === 1 ? "field" : "fields"}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function DetailsButton({
   row,
   onOpen,
@@ -55,13 +91,13 @@ export function DetailsButton({
   return (
     <Button
       aria-label={`Open details: ${row.title}`}
-      className="-ml-3 h-7 px-3 text-primary"
+      className="h-7 px-2 text-primary"
       onClick={onOpen}
       size="xs"
       type="button"
       variant="ghost"
     >
-      {n > 0 ? `Details (${n} ${n === 1 ? "field" : "fields"})` : "Details"}
+      Details
     </Button>
   );
 }

@@ -1,6 +1,18 @@
 "use server";
 
-import { and, asc, desc, eq, inArray, lt, max } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  max,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   dailyChecklistDay,
   dailyChecklistItem,
@@ -44,6 +56,7 @@ import {
   statusSchema,
 } from "@/lib/daily-checklist/validation";
 import { db } from "@/lib/db";
+import { notifyChecklistCompleted } from "@/lib/notifications/checklist";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { getEffectiveTimezone } from "@/lib/timezone";
 
@@ -288,9 +301,20 @@ export async function reorderChecklistItems(
   return { ok: true };
 }
 
+/** Member History paging + filters (all optional; date range is inclusive, YYYY-MM-DD). */
+type MemberHistoryOpts = {
+  before?: string;
+  date?: string;
+  from?: string;
+  limit?: number;
+  status?: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED";
+  templateId?: string;
+  to?: string;
+};
+
 export async function getMyChecklistHistory(
   workspaceId: string,
-  opts?: { before?: string; date?: string; limit?: number }
+  opts?: MemberHistoryOpts
 ): Promise<HistoryPage | ChecklistActionError> {
   const a = await requireChecklistAccess(workspaceId, "personal");
   if ("error" in a) {
@@ -477,8 +501,45 @@ export async function updateTeamChecklistItem(
       updatedAt: new Date(),
     })
     .where(eq(dailyChecklistItem.id, itemId));
+  // Admins hear about it only when THIS change finishes the day's last item.
+  if (status?.success && status.data === "DONE" && row.item.status !== "DONE") {
+    await notifyIfDayComplete(workspaceId, row.day.id, a);
+  }
   await refreshWorkspace(workspaceId);
   return { ok: true };
+}
+
+async function notifyIfDayComplete(
+  workspaceId: string,
+  dayId: string,
+  a: { userId: string; userName: string }
+) {
+  const [c] = await db
+    .select({
+      templateName: dailyChecklistTemplate.name,
+      ...dayCountCols,
+    })
+    .from(dailyChecklistDay)
+    .leftJoin(
+      dailyChecklistItem,
+      eq(dailyChecklistItem.dayId, dailyChecklistDay.id)
+    )
+    .leftJoin(
+      dailyChecklistTemplate,
+      eq(dailyChecklistTemplate.id, dailyChecklistDay.templateId)
+    )
+    .where(eq(dailyChecklistDay.id, dayId))
+    .groupBy(dailyChecklistTemplate.name);
+  if (c && c.total > 0 && c.completed === c.total) {
+    await notifyChecklistCompleted({
+      workspaceId,
+      userId: a.userId,
+      userName: a.userName,
+      templateName: c.templateName,
+      completed: c.completed,
+      total: c.total,
+    });
+  }
 }
 
 async function missingRequiredFields(itemId: string): Promise<string[]> {
@@ -559,7 +620,7 @@ export async function setChecklistItemFieldValues(
 
 export async function getMyTeamChecklistHistory(
   workspaceId: string,
-  opts?: { before?: string; date?: string; limit?: number }
+  opts?: MemberHistoryOpts
 ): Promise<HistoryPage | ChecklistActionError> {
   const a = await requireChecklistAccess(workspaceId, "team");
   if ("error" in a) {
@@ -631,10 +692,9 @@ export async function getChecklistDay(
 }
 
 /**
- * Read-only batch of `getChecklistDay` for the History matrix: one request for all of a
- * template's member-days instead of one per member. Team days of this workspace only — Owners/
- * Admins may read any, everyone else only their own (same rule as `getChecklistDay`; guests get
- * nothing). Ids that don't qualify are simply absent. Stored snapshots, nothing computed.
+ * Read-only batch of `getChecklistDay` for History: one request for many saved days. Team days —
+ * Owners/Admins may read any, everyone else only their own; Personal days — the owner only
+ * (same rules as `getChecklistDay`; guests get nothing). Ids that don't qualify are simply absent. Stored snapshots, nothing computed.
  */
 export async function getChecklistDays(
   workspaceId: string,
@@ -664,8 +724,18 @@ export async function getChecklistDays(
       and(
         inArray(dailyChecklistDay.id, ids),
         eq(dailyChecklistDay.workspaceId, workspaceId),
-        eq(dailyChecklistDay.type, "TEAM"),
-        a.isAdmin ? undefined : eq(dailyChecklistDay.userId, a.userId)
+        or(
+          // Team days: the assignee, or a workspace Owner/Admin.
+          and(
+            eq(dailyChecklistDay.type, "TEAM"),
+            a.isAdmin ? undefined : eq(dailyChecklistDay.userId, a.userId)
+          ),
+          // Personal days: owner only (admins cannot read other people's personal lists).
+          and(
+            eq(dailyChecklistDay.type, "PERSONAL"),
+            eq(dailyChecklistDay.userId, a.userId)
+          )
+        )
       )
     );
   const out: Record<string, DayDetail> = {};
@@ -681,7 +751,7 @@ export async function getChecklistDays(
       }
       out[d.day.id] = {
         date: d.day.date,
-        type: "TEAM",
+        type: d.day.type === "PERSONAL" ? "PERSONAL" : "TEAM",
         editable: false,
         templateName: d.templateName,
         userName: d.userName,
@@ -695,14 +765,70 @@ export async function getChecklistDays(
 
 // ─────────────────────────────── shared ───────────────────────────────
 
-async function historyPage(opts: {
-  workspaceId: string;
-  userId: string;
-  type: "PERSONAL" | "TEAM";
-  before?: string;
-  date?: string;
-  limit?: number;
-}): Promise<HistoryPage | ChecklistActionError> {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Same status rules as `dayStatus`, expressed over the per-day item aggregates. */
+function historyStatusHaving(status: MemberHistoryOpts["status"]) {
+  const total = sql`count(${dailyChecklistItem.id})`;
+  const done = sql`count(*) filter (where ${dailyChecklistItem.status} = 'DONE')`;
+  const started = sql`count(*) filter (where ${dailyChecklistItem.status} = 'IN_PROGRESS')`;
+  switch (status) {
+    case "COMPLETED":
+      return sql`${total} > 0 and ${done} = ${total}`;
+    case "IN_PROGRESS":
+      return sql`${total} > 0 and ${done} < ${total} and (${done} > 0 or ${started} > 0)`;
+    case "NOT_STARTED":
+      return sql`${total} > 0 and ${done} = 0 and ${started} = 0`;
+    default:
+      return;
+  }
+}
+
+/** Templates the viewer has saved days for (feeds the History "All Templates" filter). */
+export async function getMyHistoryTemplates(
+  workspaceId: string
+): Promise<{ id: string; name: string }[] | ChecklistActionError> {
+  const a = await requireChecklistAccess(workspaceId, "team");
+  if ("error" in a) {
+    return { error: a.error };
+  }
+  const rows = await db
+    .selectDistinct({
+      id: dailyChecklistTemplate.id,
+      name: dailyChecklistTemplate.name,
+    })
+    .from(dailyChecklistDay)
+    .innerJoin(
+      dailyChecklistTemplate,
+      eq(dailyChecklistTemplate.id, dailyChecklistDay.templateId)
+    )
+    .where(
+      and(
+        eq(dailyChecklistDay.workspaceId, workspaceId),
+        eq(dailyChecklistDay.userId, a.userId),
+        eq(dailyChecklistDay.type, "TEAM")
+      )
+    )
+    .orderBy(asc(dailyChecklistTemplate.name));
+  return rows;
+}
+
+async function historyPage(
+  opts: {
+    workspaceId: string;
+    userId: string;
+    type: "PERSONAL" | "TEAM";
+  } & MemberHistoryOpts
+): Promise<HistoryPage | ChecklistActionError> {
+  for (const d of [opts.from, opts.to]) {
+    if (d !== undefined && !dateSchema.safeParse(d).success) {
+      return { error: "Invalid date" };
+    }
+  }
+  if (opts.templateId !== undefined && !UUID_RE.test(opts.templateId)) {
+    return { error: "Invalid template" };
+  }
   if (opts.date !== undefined && !dateSchema.safeParse(opts.date).success) {
     return { error: "Invalid date" };
   }
@@ -738,10 +864,16 @@ async function historyPage(opts: {
           ? eq(dailyChecklistDay.date, opts.date)
           : opts.before
             ? lt(dailyChecklistDay.date, opts.before)
-            : undefined
+            : undefined,
+        opts.from ? gte(dailyChecklistDay.date, opts.from) : undefined,
+        opts.to ? lte(dailyChecklistDay.date, opts.to) : undefined,
+        opts.templateId
+          ? eq(dailyChecklistDay.templateId, opts.templateId)
+          : undefined
       )
     )
     .groupBy(dailyChecklistDay.id, dailyChecklistTemplate.name)
+    .having(historyStatusHaving(opts.status))
     .orderBy(desc(dailyChecklistDay.date), asc(dailyChecklistTemplate.name))
     .limit(limit + 1);
   let page = rows.slice(0, limit);

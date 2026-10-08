@@ -54,6 +54,11 @@ export const LIMITS = {
   historyPageSize: 30,
   /** Admin → History: number of distinct DATES per page (each date keeps all its rows together). */
   adminHistoryDates: 20,
+  /** Admin → History report: rows (checklist days) per page. */
+  historyReportPageSize: 20,
+  /** Max span of the report's date range, and max rows in a CSV export. */
+  historyReportMaxDays: 366,
+  historyReportExportRows: 5000,
 } as const;
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

@@ -30,6 +30,10 @@ export const NOTIFICATION_TRIGGERS = {
   SPRINT_ENDING_SOON: "sprint_ending_soon",
   SPRINT_CLOSED: "sprint_closed",
   SPRINT_AUTO_CREATED: "sprint_auto_created",
+  CHECKLIST_ASSIGNED: "checklist_assigned",
+  CHECKLIST_UNASSIGNED: "checklist_unassigned",
+  CHECKLIST_DISABLED: "checklist_disabled",
+  CHECKLIST_COMPLETED: "checklist_completed",
 } as const;
 
 export type NotificationTriggerType =
@@ -50,6 +54,7 @@ export const EMAIL_DEFAULT_ENABLED_TRIGGERS = [
   "mention_comment",
   "mention_description",
   "task_assigned",
+  "checklist_assigned",
   "comment_reply",
   "comment_resolved",
   "due_date_today",
@@ -76,6 +81,7 @@ export function emailDefaultFor(triggerType: string): boolean {
  */
 export const SOUND_DEFAULT_ENABLED_TRIGGERS = [
   "task_assigned",
+  "checklist_assigned",
   "mention_comment",
   "mention_description",
   "comment_reply",

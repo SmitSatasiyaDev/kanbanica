@@ -1744,7 +1744,11 @@ function TopbarRightColumn({
       />
       <PushNotificationBanner workspaceId={workspaceId} />
       <PinnedTasksBar workspaceId={workspaceId} />
-      <main className="flex-1 overflow-auto bg-app">{children}</main>
+      {/* Pages that expand/collapse content mark themselves with data-stable-gutter so the
+          scrollbar appearing/disappearing doesn't resize (shift) the page sideways. */}
+      <main className="flex-1 overflow-auto bg-app has-data-stable-gutter:[scrollbar-gutter:stable]">
+        {children}
+      </main>
     </div>
   );
 }

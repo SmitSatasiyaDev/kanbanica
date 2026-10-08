@@ -1,8 +1,17 @@
 "use client";
 
-import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import {
+  ArrowsInLineVerticalIcon,
+  ArrowsOutLineVerticalIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  CircleHalfIcon,
+  ListChecksIcon,
+} from "@phosphor-icons/react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { getChecklistHistoryItems } from "@/app/actions/daily-checklist-history";
 import { UserAvatar } from "@/components/common/user-avatar";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,106 +20,37 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  groupTodayRows,
-  type TodayTemplateGroup,
-} from "@/lib/daily-checklist/today-group";
-import type { TodayInstanceRow } from "@/lib/daily-checklist/types";
+import type { DayStatus } from "@/lib/daily-checklist/progress";
+import { summarizeAdminToday } from "@/lib/daily-checklist/today-view";
+import type {
+  HistoryItemsResult,
+  TodayInstanceRow,
+} from "@/lib/daily-checklist/types";
 import { cn } from "@/lib/utils";
-import { TodayMatrix } from "../history-inline";
-import { DayStatusLabel, formatShortDate } from "../shared";
+import { ExpandBlock, ExpandRow } from "../expand-panel";
+import { DayStatusBadge, EmptyState, formatShortDate } from "../shared";
+import { SummaryCardGrid } from "../summary-cards";
+import { CountUnit } from "../today-checklists";
+import { useAutoExpand } from "../use-auto-expand";
+import { InlineDetail } from "./history-report";
 
-function Avatars({ users }: { users: TodayInstanceRow[] }) {
-  return (
-    <span className="-space-x-1.5 inline-flex shrink-0">
-      {users.slice(0, 3).map((u) => (
-        <UserAvatar
-          className="ring-2 ring-base-100"
-          email=""
-          image={u.userImage}
-          key={u.dayId}
-          name={u.userName}
-          size="xs"
-        />
-      ))}
-    </span>
-  );
-}
+/**
+ * Admin → Today's Checklists: the same cards / table / inline-expand language as History, for
+ * today's saved days (read-only; the items of an opened row load in one request).
+ */
+type TodayFilter = Extract<
+  DayStatus,
+  "IN_PROGRESS" | "NOT_STARTED" | "COMPLETE"
+>;
 
-function ParentProgress({ g }: { g: TodayTemplateGroup }) {
-  if (g.users.length === 1) {
-    const u = g.users[0];
-    return (
-      <span className="tabular-nums">
-        {u.completed}/{u.total}
-      </span>
-    );
-  }
-  return (
-    <span className="tabular-nums">
-      <span data-testid="users-progress">
-        {g.usersComplete}/{g.users.length} users complete
-      </span>
-      <span className="block text-base-content/60 text-xs">
-        {g.itemsCompleted}/{g.itemsTotal} items
-      </span>
-    </span>
-  );
-}
+const FILTER_EMPTY: Record<TodayFilter, string> = {
+  IN_PROGRESS: "in progress",
+  NOT_STARTED: "not started",
+  COMPLETE: "completed",
+};
 
-/** Each user's items for one template today (members × items matrix, read-only). */
-function GroupDetails({
-  g,
-  date,
-  workspaceId,
-}: {
-  date: string;
-  g: TodayTemplateGroup;
-  workspaceId: string;
-}) {
-  return (
-    <div
-      className="overflow-hidden rounded-xl border border-base-300 bg-base-100"
-      data-testid="today-users"
-    >
-      <TodayMatrix
-        date={date}
-        label={g.name ?? "Checklist"}
-        users={g.users}
-        workspaceId={workspaceId}
-      />
-    </div>
-  );
-}
-
-function ExpandToggle({
-  g,
-  open,
-  onToggle,
-}: {
-  g: TodayTemplateGroup;
-  onToggle: () => void;
-  open: boolean;
-}) {
-  const Caret = open ? CaretUpIcon : CaretDownIcon;
-  return (
-    <button
-      aria-expanded={open}
-      aria-label={`${open ? "Hide" : "Show"} users: ${g.name ?? "template"}`}
-      className="inline-flex items-center gap-2 rounded-md py-0.5 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      onClick={onToggle}
-      type="button"
-    >
-      <Avatars users={g.users} />
-      <span className="text-sm">{g.users.length} users</span>
-      <Caret aria-hidden className="size-3 text-base-content/60" />
-    </button>
-  );
-}
-
-/** Template + date → one row; multi-user templates expand to list each user's progress (read-only, no detail popup). */
 export function TodayGroups({
-  rows,
+  rows: allRows,
   date,
   workspaceId,
 }: {
@@ -118,141 +58,305 @@ export function TodayGroups({
   rows: TodayInstanceRow[];
   workspaceId: string;
 }) {
-  const groups = useMemo(() => groupTodayRows(rows, date), [rows, date]);
-  // Details (each user's items) start expanded; the toggle collapses a template.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const toggle = (k: string) =>
-    setCollapsed((p) => {
-      const n = new Set(p);
-      if (n.has(k)) {
-        n.delete(k);
-      } else {
-        n.add(k);
+  // Cards are filters over the already-loaded rows (counts always cover the whole day).
+  // Open by default the first time; afterwards the user's last expand/collapse decides.
+  const [auto, setAuto] = useAutoExpand("today-admin");
+  const [openIds, setOpenIds] = useState<Set<string>>(
+    () => new Set(auto ? allRows.map((r) => r.dayId) : [])
+  );
+  const commit = (next: Set<string>) => {
+    setOpenIds(next);
+    setAuto(next.size > 0);
+  };
+  const [filter, setFilter] = useState<TodayFilter | null>(null);
+  const summary = useMemo(() => summarizeAdminToday(allRows), [allRows]);
+  const rows = filter ? allRows.filter((r) => r.status === filter) : allRows;
+  // A card filter opens the checklists it shows (unless the user last collapsed).
+  const pick = (f: TodayFilter | null) => {
+    const next = f === null || filter === f ? null : f;
+    setFilter(next);
+    setOpenIds(
+      new Set(
+        auto
+          ? allRows
+              .filter((r) => !next || r.status === next)
+              .map((r) => r.dayId)
+          : []
+      )
+    );
+  };
+  const allOpen = rows.length > 0 && rows.every((r) => openIds.has(r.dayId));
+  const [details, setDetails] = useState<Record<string, HistoryItemsResult>>(
+    {}
+  );
+  const [error, setError] = useState<string | null>(null);
+  const toggle = (id: string) => {
+    const n = new Set(openIds);
+    if (!n.delete(id)) {
+      n.add(id);
+    }
+    commit(n);
+  };
+  const dateLabel = `${formatShortDate(date)}, ${date.slice(0, 4)}`;
+
+  // ONE batched request for every open row not loaded yet (saved days don't change).
+  useEffect(() => {
+    // The action takes ≤50 days per call; the effect re-runs until every open row is loaded.
+    const missing = [...openIds].filter((id) => !details[id]).slice(0, 50);
+    if (missing.length === 0) {
+      return;
+    }
+    let live = true;
+    getChecklistHistoryItems(workspaceId, missing).then((res) => {
+      if (!live) {
+        return;
       }
-      return n;
+      if ("error" in res && typeof res.error === "string") {
+        setError(res.error);
+      } else {
+        setError(null);
+        const got = res as Record<string, HistoryItemsResult>;
+        const empty = (id: string): HistoryItemsResult => ({
+          dayId: id,
+          items: [],
+          timezone: "UTC",
+        });
+        // Ids the server didn't return are filled with an empty day so the loop always ends.
+        setDetails((d) => ({
+          ...d,
+          ...Object.fromEntries(
+            missing.map((id) => [id, got[id] ?? empty(id)])
+          ),
+        }));
+      }
     });
+    return () => {
+      live = false;
+    };
+  }, [openIds, details, workspaceId]);
+
+  const toggleBtn = (r: TodayInstanceRow, className?: string) => (
+    <Button
+      aria-controls={`today-${r.dayId}`}
+      aria-expanded={openIds.has(r.dayId)}
+      aria-label={`${openIds.has(r.dayId) ? "Hide" : "View"} ${r.userName}, ${r.templateName ?? "Checklist"}`}
+      className={className}
+      onClick={() => toggle(r.dayId)}
+      size="sm"
+      type="button"
+      variant="secondary"
+    >
+      {openIds.has(r.dayId) ? "Hide" : "View"}
+    </Button>
+  );
 
   return (
-    <>
-      {/* ≥ md: table */}
-      <div className="hidden overflow-hidden rounded-xl border border-base-300 md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Template</TableHead>
-              <TableHead>Users</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Progress</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groups.flatMap((g) => {
-              const single = g.users.length === 1 ? g.users[0] : null;
-              const expanded = !collapsed.has(g.key);
-              const main = (
-                <TableRow data-testid="today-group" key={g.key}>
-                  <TableCell className="max-w-xs break-words font-medium">
-                    {g.name ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {single ? (
-                      <span className="inline-flex items-center gap-2">
-                        <UserAvatar
-                          email=""
-                          image={single.userImage}
-                          name={single.userName}
-                          size="xs"
-                        />
-                        {single.userName}
-                      </span>
-                    ) : (
-                      <ExpandToggle
-                        g={g}
-                        onToggle={() => toggle(g.key)}
-                        open={expanded}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell>{formatShortDate(date)}</TableCell>
-                  <TableCell>
-                    <ParentProgress g={g} />
-                  </TableCell>
-                  <TableCell>
-                    <DayStatusLabel
-                      status={single ? single.status : g.status}
-                    />
-                  </TableCell>
-                </TableRow>
-              );
-              return expanded
-                ? [
-                    main,
-                    <TableRow key={`${g.key}:users`}>
-                      <TableCell className="bg-base-200/40" colSpan={5}>
-                        <GroupDetails
-                          date={date}
-                          g={g}
-                          workspaceId={workspaceId}
-                        />
-                      </TableCell>
-                    </TableRow>,
-                  ]
-                : [main];
-            })}
-          </TableBody>
-        </Table>
-      </div>
+    <div className="space-y-5">
+      <SummaryCardGrid
+        cards={[
+          {
+            label: "Tasks done",
+            value: `${summary.tasksDone} / ${summary.tasksTotal}`,
+            Icon: CheckCircleIcon,
+            tone: "bg-success/15 text-success",
+            onClick: () => pick(null),
+            title: "Show all checklists",
+          },
+          {
+            label: "In progress",
+            value: summary.inProgress,
+            Icon: CircleHalfIcon,
+            tone: "bg-info/15 text-info",
+            active: filter === "IN_PROGRESS",
+            onClick: () => pick("IN_PROGRESS"),
+            title: "Show only: In progress",
+          },
+          {
+            label: "Not started",
+            value: summary.notStarted,
+            Icon: CircleDashedIcon,
+            tone: "bg-base-200 text-base-content/70",
+            active: filter === "NOT_STARTED",
+            onClick: () => pick("NOT_STARTED"),
+            title: "Show only: Not started",
+          },
+          {
+            label: "Complete",
+            value: (
+              <CountUnit
+                n={summary.complete}
+                one="checklist"
+                other="checklists"
+              />
+            ),
+            Icon: ListChecksIcon,
+            tone: "bg-primary/15 text-primary",
+            active: filter === "COMPLETE",
+            onClick: () => pick("COMPLETE"),
+            title: "Show only: Complete",
+          },
+        ]}
+      />
 
-      {/* < md: cards */}
-      <ul className="space-y-2 md:hidden">
-        {groups.map((g) => {
-          const single = g.users.length === 1 ? g.users[0] : null;
-          const expanded = !collapsed.has(g.key);
-          return (
-            <li
-              className="space-y-2 rounded-xl border border-base-300 p-4"
-              data-testid="today-group"
-              key={g.key}
-            >
-              <p className="break-words font-medium text-sm">{g.name ?? "—"}</p>
-              {single ? (
-                <span className="inline-flex items-center gap-2 text-left text-sm">
-                  <UserAvatar
-                    email=""
-                    image={single.userImage}
-                    name={single.userName}
-                    size="xs"
-                  />
-                  {single.userName}
-                </span>
-              ) : (
-                <ExpandToggle
-                  g={g}
-                  onToggle={() => toggle(g.key)}
-                  open={expanded}
-                />
-              )}
-              <div
-                className={cn(
-                  "flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-                )}
+      {rows.length > 0 && (
+        <div className="flex justify-end">
+          <Button
+            aria-label={
+              allOpen ? "Collapse all checklists" : "Expand all checklists"
+            }
+            onClick={() =>
+              commit(allOpen ? new Set() : new Set(rows.map((r) => r.dayId)))
+            }
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {allOpen ? (
+              <ArrowsInLineVerticalIcon className="size-4" />
+            ) : (
+              <ArrowsOutLineVerticalIcon className="size-4" />
+            )}
+            {allOpen ? "Collapse all" : "Expand all"}
+          </Button>
+        </div>
+      )}
+      {rows.length === 0 && filter ? (
+        <EmptyState
+          description="Try another card or clear the filter."
+          title={`No ${FILTER_EMPTY[filter]} checklists today.`}
+        >
+          <Button
+            onClick={() => pick(null)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Clear filters
+          </Button>
+        </EmptyState>
+      ) : (
+        <>
+          <div className="hidden overflow-hidden rounded-xl border border-base-300 md:block">
+            <Table className="table-fixed">
+              <caption className="sr-only">Today's checklists</caption>
+              <colgroup>
+                <col className="w-[14%]" />
+                <col className="w-[24%]" />
+                <col className="w-[24%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+              <TableHeader>
+                <TableRow>
+                  {["Date", "User", "Template", "Completed", "Status"].map(
+                    (h) => (
+                      <TableHead className="font-semibold text-xs" key={h}>
+                        {h}
+                      </TableHead>
+                    )
+                  )}
+                  <TableHead className="text-right font-semibold text-xs">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <Fragment key={r.dayId}>
+                    <TableRow
+                      className={cn(
+                        openIds.has(r.dayId) && "border-b-0 bg-base-200/40"
+                      )}
+                      data-testid="today-group"
+                    >
+                      <TableCell className="whitespace-nowrap">
+                        {dateLabel}
+                      </TableCell>
+                      <TableCell>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <UserAvatar
+                            className="shrink-0"
+                            image={r.userImage}
+                            name={r.userName}
+                            size="md"
+                          />
+                          <span
+                            className="truncate font-medium"
+                            title={r.userName}
+                          >
+                            {r.userName}
+                          </span>
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="block truncate"
+                          title={r.templateName ?? ""}
+                        >
+                          {r.templateName ?? "Checklist"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {r.completed} / {r.total}
+                      </TableCell>
+                      <TableCell>
+                        <DayStatusBadge status={r.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {toggleBtn(r)}
+                      </TableCell>
+                    </TableRow>
+                    <ExpandRow
+                      colSpan={6}
+                      id={`today-${r.dayId}`}
+                      open={openIds.has(r.dayId)}
+                    >
+                      <InlineDetail data={details[r.dayId]} error={error} />
+                    </ExpandRow>
+                  </Fragment>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <ul className="space-y-2 md:hidden">
+            {rows.map((r) => (
+              <li
+                className="space-y-2 rounded-xl border border-base-300 p-3"
+                data-testid="today-group"
+                key={r.dayId}
               >
-                <span className="text-base-content/60">
-                  {formatShortDate(date)}
-                </span>
-                <span>·</span>
-                <ParentProgress g={g} />
-                <span>·</span>
-                <DayStatusLabel status={single ? single.status : g.status} />
-              </div>
-              {!single && expanded && (
-                <GroupDetails date={date} g={g} workspaceId={workspaceId} />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </>
+                <div className="flex items-start gap-2">
+                  <UserAvatar image={r.userImage} name={r.userName} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-medium text-sm">
+                      {r.userName}
+                    </p>
+                    <p className="break-words text-base-content/60 text-xs">
+                      {r.templateName ?? "Checklist"}
+                    </p>
+                    <p className="text-base-content/60 text-xs">{dateLabel}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <span className="font-medium tabular-nums">
+                    {r.completed} / {r.total}
+                  </span>
+                  <DayStatusBadge status={r.status} />
+                </div>
+                {toggleBtn(r, "w-full")}
+                <ExpandBlock
+                  id={`today-${r.dayId}`}
+                  open={openIds.has(r.dayId)}
+                >
+                  <InlineDetail data={details[r.dayId]} error={error} />
+                </ExpandBlock>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
