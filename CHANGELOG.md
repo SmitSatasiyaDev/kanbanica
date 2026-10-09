@@ -30,13 +30,35 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
 ### Added
+- **Daily Checklist.** A personal, per-user recurring checklist per workspace
+  (`/[workspaceId]/daily-checklist`) with month calendar, history, recurrence,
+  stop/delete of series (history is preserved) and a Focus Mode.
+- **Password sign-up switch** in Orbit → Settings → Authentication. Overrides
+  `ALLOW_PASSWORD_SIGNUP` (which remains the fallback) and applies without a restart.
+- Status color picker with hex validation for list statuses.
+- Automatic light/dark appearance script.
 - **Verification-code sign-in.** A magic link opened in a different browser shows
   a 6-digit one-time code (not emailed) to enter where sign-in started. Codes are stored
   hashed, expire after 10 minutes, lock after 5 wrong attempts, and are rate
   limited per IP and per email. No migration required. A magic link opened in a
   different browser than the one that requested it no longer signs in directly;
   it shows the code (copy button, or "Sign in here instead") at `/login/code`.
+
+### Changed
+- `task_created` notifications are now opt-in: in-app and push default to off for
+  users who have not saved a preference. Saved preferences are respected;
+  assignees still get `task_assigned`.
+
+### Fixed
+- Dependency activity entries no longer render `"undefined"` for the task title.
+
+### Upgrade notes
+- Six new database migrations (0030–0035: checklist tables and the password
+  sign-up column) are applied automatically on start. All are additive. No
+  environment variable changes.
 
 ## [0.4.0] - 2026-10-05
 
