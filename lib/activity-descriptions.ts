@@ -1,6 +1,17 @@
 import type { DashboardCategory } from "@/lib/dashboard-category";
 import { formatDuration } from "@/lib/format-duration";
 
+/** Older entries stored only the task id (no title) — never print "undefined". */
+function dependencyText(
+  verb: "added" | "removed",
+  meta: Record<string, unknown>
+): string {
+  const title = meta.depends_on_task_title;
+  return typeof title === "string" && title
+    ? `${verb} dependency on "${title}"`
+    : `${verb} a dependency`;
+}
+
 export function describeEvent(
   eventType: string,
   meta: Record<string, unknown>
@@ -51,9 +62,9 @@ export function describeEvent(
     case "custom_field_value_cleared":
       return `cleared "${meta.fieldName}"`;
     case "dependency_added":
-      return `added dependency on "${meta.depends_on_task_title}"`;
+      return dependencyText("added", meta);
     case "dependency_removed":
-      return `removed dependency on "${meta.depends_on_task_title}"`;
+      return dependencyText("removed", meta);
     case "attachment_uploaded":
       return `uploaded "${meta.file_name}"`;
     case "attachment_deleted":

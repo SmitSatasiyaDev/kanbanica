@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import {
   emailDefaultFor,
+  inAppDefaultFor,
   NOTIFICATION_TRIGGERS,
+  pushDefaultFor,
   soundDefaultFor,
 } from "@/lib/notifications/types";
 import { isSmtpConfigured } from "@/lib/smtp/client";
@@ -37,10 +39,10 @@ export async function GET(_req: NextRequest) {
     const pref = prefMap.get(triggerType);
     return {
       triggerType,
-      inAppEnabled: pref?.inAppEnabled ?? true,
+      inAppEnabled: pref?.inAppEnabled ?? inAppDefaultFor(triggerType),
       // Email is the one channel whose default is per-trigger, not `true`.
       emailEnabled: pref?.emailEnabled ?? emailDefaultFor(triggerType),
-      pushEnabled: pref?.pushEnabled ?? true,
+      pushEnabled: pref?.pushEnabled ?? pushDefaultFor(triggerType),
       // Sound is also per-trigger — same "about you" defaults as email.
       soundEnabled: pref?.soundEnabled ?? soundDefaultFor(triggerType),
     };

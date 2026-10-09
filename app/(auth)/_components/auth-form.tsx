@@ -366,6 +366,8 @@ export function LoginFormFlat({
         </form>
       </Form>
 
+      {/* Sign-up link hidden for now (sign-up is not offered from the login
+          page). To bring it back, uncomment:
       {passwordEnabled && (
         <p className="text-center text-sm text-base-content/70">
           {"Don't have an account? "}
@@ -377,6 +379,7 @@ export function LoginFormFlat({
           </Link>
         </p>
       )}
+      */}
 
       <TermsNotice className="pt-1" />
     </div>

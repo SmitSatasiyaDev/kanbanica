@@ -45,6 +45,7 @@ function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
 }
 
 interface SaveInput {
+  auth?: { passwordSignupEnabled?: unknown };
   google?: { clientId?: unknown; clientSecret?: unknown };
   notifications?: { emailsEnabled?: unknown };
   smtp?: {
@@ -67,7 +68,7 @@ interface SaveInput {
 }
 
 /**
- * Partial update, one section (smtp/google/storage/webPush/notifications) at a time.
+ * Partial update, one section (smtp/google/storage/webPush/notifications/auth) at a time.
  * Within a section: key omitted = unchanged, "" = clear, non-empty = set
  * (encrypted for secret fields).
  */
@@ -161,6 +162,16 @@ export async function saveIntegrationSettingsAction(
       })
     );
     auditSections.push("webPush");
+  }
+
+  if (body.auth) {
+    if (typeof body.auth.passwordSignupEnabled !== "boolean") {
+      return { error: "Invalid sign-up setting." };
+    }
+    updates.passwordSignupEnabled = body.auth.passwordSignupEnabled;
+    auditSections.push(
+      `auth (password sign-up ${body.auth.passwordSignupEnabled ? "on" : "off"})`
+    );
   }
 
   if (body.notifications) {

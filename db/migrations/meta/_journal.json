@@ -246,6 +246,13 @@
       "when": 1791521947737,
       "tag": "0034_checklist_drop_priority",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791536276437,
+      "tag": "0035_password_signup_toggle",
+      "breakpoints": true
     }
   ]
 }

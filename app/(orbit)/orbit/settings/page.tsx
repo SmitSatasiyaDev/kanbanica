@@ -1,4 +1,4 @@
-import { BellIcon } from "@phosphor-icons/react/dist/ssr";
+import { BellIcon, UserPlusIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { OrbitPageHeader } from "@/components/admin/orbit-page-header";
 import {
@@ -13,6 +13,12 @@ export const metadata = {
 };
 
 const SETTINGS_SECTIONS = [
+  {
+    href: "/orbit/settings/authentication",
+    title: "Authentication",
+    description: "Email + password access for this instance.",
+    icon: UserPlusIcon,
+  },
   {
     href: "/orbit/settings/notifications",
     title: "Notifications",

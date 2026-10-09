@@ -50,6 +50,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // first-run wizard — no need to fetch current values like /orbit/integrations
 // does, every field starts blank.
 const EMPTY_INTEGRATION_SETTINGS: IntegrationSettingsSummary = {
+  auth: { passwordSignupEnabled: false },
   notifications: { emailsEnabled: true },
   smtp: { host: "", port: 587, user: "", from: "", hasPassword: false },
   google: { clientId: "", hasClientSecret: false },

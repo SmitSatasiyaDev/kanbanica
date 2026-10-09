@@ -1,0 +1,1 @@
+ALTER TABLE "integration_settings" ADD COLUMN "password_signup_enabled" boolean;

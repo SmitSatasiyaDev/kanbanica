@@ -20,7 +20,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  CheckIcon,
   DotsSixVerticalIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
@@ -37,6 +36,7 @@ import {
   updateListStatus,
 } from "@/app/actions/list";
 import { Button } from "@/components/ui/button";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -104,38 +104,6 @@ interface ListStatusesSettingsProps {
   workspaceId: string;
 }
 
-// ─── Color Swatch ─────────────────────────────────────────────────────────────
-
-function ColorSwatch({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (c: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5 p-1">
-      {COLOR_OPTIONS.map((c) => (
-        <button
-          className="size-5 rounded-full flex items-center justify-center focus:outline-none"
-          key={c}
-          onClick={() => onChange(c)}
-          style={{
-            backgroundColor: c,
-            boxShadow:
-              value === c ? `0 0 0 2px white, 0 0 0 3.5px ${c}` : undefined,
-          }}
-          type="button"
-        >
-          {value === c && (
-            <CheckIcon className="size-2.5 text-white" weight="bold" />
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ─── Add Row ──────────────────────────────────────────────────────────────────
 
 function AddRow({
@@ -191,11 +159,10 @@ function AddRow({
             />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-auto p-1">
-            <ColorSwatch
-              onChange={(c) => {
-                setColor(c);
-                setColorOpen(false);
-              }}
+            <ColorPicker
+              onChange={setColor}
+              onCommit={() => setColorOpen(false)}
+              presets={COLOR_OPTIONS}
               value={color}
             />
           </PopoverContent>
@@ -323,11 +290,10 @@ function EditRow({
             />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-auto p-1">
-            <ColorSwatch
-              onChange={(c) => {
-                setColor(c);
-                setColorOpen(false);
-              }}
+            <ColorPicker
+              onChange={setColor}
+              onCommit={() => setColorOpen(false)}
+              presets={COLOR_OPTIONS}
               value={color}
             />
           </PopoverContent>

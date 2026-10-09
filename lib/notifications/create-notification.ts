@@ -18,7 +18,12 @@ import { pushToUser } from "@/lib/sse-clients";
 import { notificationSettingsUrl, notificationUrl } from "./links";
 import { sendPushToUser } from "./push";
 import type { NotificationTriggerType } from "./types";
-import { emailDefaultFor, soundDefaultFor } from "./types";
+import {
+  emailDefaultFor,
+  inAppDefaultFor,
+  pushDefaultFor,
+  soundDefaultFor,
+} from "./types";
 
 export interface CreateNotificationParams {
   actorId: string | null;
@@ -116,17 +121,18 @@ async function _create(params: CreateNotificationParams) {
       )
     );
 
-  // Build pref maps — default is enabled if no row exists
+  // Build pref maps — with no stored row, the per-trigger default applies
+  // (on, except opt-in triggers like task_created; see ./types).
   const prefMap = new Map(prefs.map((p) => [p.userId, p]));
 
   const notifRecipients = finalRecipients.filter((id) => {
     const pref = prefMap.get(id);
-    return pref ? pref.inAppEnabled : true; // default on
+    return pref ? pref.inAppEnabled : inAppDefaultFor(triggerType);
   });
 
   const pushRecipients = finalRecipients.filter((id) => {
     const pref = prefMap.get(id);
-    return pref ? pref.pushEnabled : true; // default on
+    return pref ? pref.pushEnabled : pushDefaultFor(triggerType);
   });
 
   // Email defaults are NOT `true` like in-app/push — only high-signal triggers

@@ -23,6 +23,7 @@ import { verifyEmailTemplate } from "@/lib/email/templates/verify-email";
 import { env } from "@/lib/env";
 import {
   getGoogleOAuthSettings,
+  isPasswordSignupEnabled,
   isSmtpConfigured,
 } from "@/lib/integration-settings";
 import {
@@ -121,9 +122,12 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    // Self-serve registration is an explicit opt-in (see lib/env.ts). Sign-IN
-    // is always on, so `create:admin`-provisioned accounts keep working.
-    disableSignUp: !env.ALLOW_PASSWORD_SIGNUP,
+    // Self-serve registration is an explicit opt-in, but it is NOT decided here:
+    // this object is built once per process, and the switch lives in Orbit →
+    // Settings (DB, `.env` fallback) so it must apply without a restart. The
+    // `before` hook below rejects `/sign-up/email` while it is off. Sign-IN is
+    // always on, so `create:admin`-provisioned accounts keep working.
+    disableSignUp: false,
     minPasswordLength: 8,
     maxPasswordLength: 128,
     // Only enforce verification when we can actually deliver the email —
@@ -320,6 +324,13 @@ export const auth = betterAuth({
         ) {
           throw ctx.redirect(`/login/code?token=${encodeURIComponent(token)}`);
         }
+      }
+      if (ctx.path === "/sign-up/email" && !(await isPasswordSignupEnabled())) {
+        // Same shape Better Auth's own `disableSignUp` produces.
+        throw new APIError("BAD_REQUEST", {
+          message: "Email and password sign up is not enabled",
+          code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        });
       }
       if (ctx.path === "/sign-in/email-otp") {
         const email = (ctx.body as { email?: unknown } | undefined)?.email;

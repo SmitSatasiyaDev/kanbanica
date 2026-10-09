@@ -19,6 +19,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getWorkspaceMembership } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { normalizeHexColor } from "@/lib/status-color";
 import { notDeleted } from "@/lib/task-visibility";
 import { deleteStorageForTasks } from "@/lib/trash";
 import { requireTaskCapacity } from "@/lib/workspace-limits";
@@ -695,6 +696,10 @@ export async function createListStatus(
   if (!name) {
     return { error: "Status name is required" };
   }
+  const color = normalizeHexColor(data.color);
+  if (!color) {
+    return { error: "Color must be a hex value like #3B82F6" };
+  }
   if (await statusNameTaken(listId, name)) {
     return duplicateStatusError(name);
   }
@@ -706,7 +711,7 @@ export async function createListStatus(
     id: statusId,
     listId,
     name,
-    color: data.color,
+    color,
     type: data.type,
     dashboardCategory: data.dashboardCategory ?? "OPEN",
     orderIndex,
@@ -754,7 +759,11 @@ export async function updateListStatus(
     updates.name = name;
   }
   if (data.color !== undefined) {
-    updates.color = data.color;
+    const color = normalizeHexColor(data.color);
+    if (!color) {
+      return { error: "Color must be a hex value like #3B82F6" };
+    }
+    updates.color = color;
   }
   if (data.type !== undefined) {
     updates.type = data.type;

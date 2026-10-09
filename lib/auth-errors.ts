@@ -25,6 +25,7 @@ const MESSAGES: Record<string, string> = {
   OTP_EXPIRED: "Verification code expired. Please request a new code.",
   TOO_MANY_ATTEMPTS: "Too many attempts. Please request a new code.",
   TOO_MANY_REQUESTS: "Too many attempts. Please wait a moment and try again.",
+  EMAIL_PASSWORD_SIGN_UP_DISABLED: "Registration is disabled on this instance.",
   signup_disabled: "Registration is disabled on this instance.",
 };
 

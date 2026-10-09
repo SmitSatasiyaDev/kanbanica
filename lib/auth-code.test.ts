@@ -1,7 +1,8 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sent, memDb } = vi.hoisted(() => ({
+const { sent, memDb, signup } = vi.hoisted(() => ({
+  signup: { enabled: false },
   sent: [] as { to: string; html: string; text?: string }[],
   memDb: {
     user: [],
@@ -25,6 +26,7 @@ vi.mock("@/lib/email", () => ({
 }));
 vi.mock("@/lib/integration-settings", () => ({
   getGoogleOAuthSettings: async () => null,
+  isPasswordSignupEnabled: async () => signup.enabled,
   isSmtpConfigured: async () => false,
 }));
 
@@ -262,5 +264,43 @@ describe("emailed code + magic link", () => {
     await expect(signInCode(email, "123456")).rejects.toMatchObject({
       status: "TOO_MANY_REQUESTS",
     });
+  });
+});
+
+describe("password sign-up switch (applies per request, no restart)", () => {
+  const signUp = (email: string) =>
+    auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "correct-horse-battery",
+          name: "Test User",
+        }),
+      })
+    );
+
+  it("rejects registration while off", async () => {
+    signup.enabled = false;
+    const email = nextEmail();
+    const res = await signUp(email);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code?: string }).code).toBe(
+      "EMAIL_PASSWORD_SIGN_UP_DISABLED"
+    );
+    expect(rows("user").some((u) => u.email === email)).toBe(false);
+  });
+
+  it("allows registration as soon as it is switched on, then closes again", async () => {
+    signup.enabled = true;
+    const email = nextEmail();
+    expect((await signUp(email)).status).toBe(200);
+    expect(rows("user").some((u) => u.email === email)).toBe(true);
+
+    signup.enabled = false;
+    const blocked = nextEmail();
+    expect((await signUp(blocked)).status).toBe(400);
+    expect(rows("user").some((u) => u.email === blocked)).toBe(false);
   });
 });

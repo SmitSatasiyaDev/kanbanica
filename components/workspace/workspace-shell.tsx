@@ -718,14 +718,19 @@ function WorkspaceShellInner({
                         onClick={() => setOpenMenu(null)}
                         side="right"
                       >
-                        <Link
-                          className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          href={`/${workspace.id}/${s.id}/settings/general`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          <GearIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Settings
-                        </Link>
+                        {/* Settings / Members need Full Access (or Owner/Admin);
+                            Archive / Delete are Owner/Admin only — mirrors the
+                            server checks so nobody sees a dead-end option. */}
+                        {s.canManageList && (
+                          <Link
+                            className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                            href={`/${workspace.id}/${s.id}/settings/general`}
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            <GearIcon className="size-3.5 shrink-0 text-base-content/60" />
+                            Settings
+                          </Link>
+                        )}
                         <Link
                           className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
                           href={`/${workspace.id}/${s.id}/activity`}
@@ -734,43 +739,49 @@ function WorkspaceShellInner({
                           <ClockIcon className="size-3.5 shrink-0 text-base-content/60" />
                           Activity
                         </Link>
-                        <Link
-                          className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          href={`/${workspace.id}/${s.id}/settings/members`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          <LockSimpleIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Members & Permissions
-                        </Link>
-                        <div className="my-1 h-px bg-base-300" />
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
-                          onClick={() =>
-                            setSpaceAction({
-                              id: s.id,
-                              name: s.name,
-                              variant: "archive",
-                            })
-                          }
-                          type="button"
-                        >
-                          <ArchiveIcon className="size-3.5 shrink-0 text-base-content/60" />
-                          Archive Project
-                        </button>
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
-                          onClick={() =>
-                            setSpaceAction({
-                              id: s.id,
-                              name: s.name,
-                              variant: "delete",
-                            })
-                          }
-                          type="button"
-                        >
-                          <TrashIcon className="size-3.5 shrink-0" />
-                          Delete Project
-                        </button>
+                        {s.canManageList && (
+                          <Link
+                            className="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                            href={`/${workspace.id}/${s.id}/settings/members`}
+                            onClick={() => setSidebarOpen(false)}
+                          >
+                            <LockSimpleIcon className="size-3.5 shrink-0 text-base-content/60" />
+                            Members & Permissions
+                          </Link>
+                        )}
+                        {isAdmin && (
+                          <>
+                            <div className="my-1 h-px bg-base-300" />
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-base-200"
+                              onClick={() =>
+                                setSpaceAction({
+                                  id: s.id,
+                                  name: s.name,
+                                  variant: "archive",
+                                })
+                              }
+                              type="button"
+                            >
+                              <ArchiveIcon className="size-3.5 shrink-0 text-base-content/60" />
+                              Archive Project
+                            </button>
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
+                              onClick={() =>
+                                setSpaceAction({
+                                  id: s.id,
+                                  name: s.name,
+                                  variant: "delete",
+                                })
+                              }
+                              type="button"
+                            >
+                              <TrashIcon className="size-3.5 shrink-0" />
+                              Delete Project
+                            </button>
+                          </>
+                        )}
                       </PopoverContent>
                     </Popover>
                   </div>
