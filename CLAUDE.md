@@ -154,7 +154,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 ### Account Deletion
 - **Block if sole owner**: before deleting, check `workspaceMember` for any workspace where this user is the only ACTIVE OWNER. If found, return an error telling them to transfer ownership first.
 - **Storage cleanup**: delete the avatar file from storage (`storage.delete(user.image)`) before the DB transaction. Non-fatal — proceed even if it fails.
-- **Full transaction order**: `notification` → `userNotificationPreference` / `userEmailPreference` / `mutedEntity` / `pushSubscription` → `userSearchHistory` / `savedFilter` / `userOnboardingProgress` → `taskAssignee` / `taskWatcher` / `timeEntry` / `commentReaction` → `spaceMember` / `workspaceMember` / `channelMember` → `session` / `account` / `user`.
+- **Full transaction order**: `notification` → `userNotificationPreference` / `userEmailPreference` / `mutedEntity` / `pushSubscription` → `userSearchHistory` / `savedFilter` / `userOnboardingProgress` → `taskAssignee` / `taskWatcher` / `timeEntry` / `commentReaction` / `checklistTask` → `spaceMember` / `workspaceMember` / `channelMember` → `session` / `account` / `user`.
 - **Comments & activity logs are NOT deleted** — `comment.authorId` and `activityLog.userId` are plain `text` columns with no FK constraint, so orphaned values are safe. Queries use `.leftJoin(user, ...)` which returns `null` for deleted users. Fallback: `authorName ?? "Deleted User"` and `name ?? "Deleted User"` in the mapping layer.
 - See full spec in `docs/settings.md` § 1.1a.
 
@@ -176,6 +176,9 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 
 ### My Tasks (global)
 - `getMyTasks()` (`app/actions/my-tasks.ts`) is **cross-workspace** — it aggregates tasks assigned to the user across ALL their workspaces (union of `getAccessibleSpaceIds` per workspace), not just the current one. Navigate to a task via `task.workspace.id` (each task carries its workspace).
+
+### Daily Checklist
+- Personal, per-user recurring checklist on **one** page (`/[workspaceId]/daily-checklist`) — calendar/history/recurrence live inside it; do not add separate History/Calendar/Recurring pages. Items are `checklist_task` (not `task` rows); per-date completion lives only in `checklist_task_occurrence`, recurrence is evaluated on read (`lib/daily-checklist.ts`). Its mutations intentionally skip `refreshWorkspace()` (personal data). **Checklist history is never hard-deleted by task actions** — stop end-dates the series; delete is soft (`deleted_at` on the task, `removed_at` on occurrences). There is no archive feature. Full spec: `docs/daily-checklist.md`.
 
 ### Undo Toast
 - For reversible actions (task/list archive & unarchive) use **`toastWithUndo(message, onUndo)`** (`lib/undo-toast.tsx`) — shows an "Undo" toast and wires **Ctrl/Cmd+Z** to the same undo. The `<Toaster>` is **bottom-right** (`app/layout.tsx`); the default ("normal") toast is inverted/elevated (`components/ui/sonner.tsx`). Do not add a second toast library.
@@ -259,6 +262,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 | Views | `docs/views.md` |
 | Calendar View | `docs/calendar-view.md` |
 | Time Tracking | `docs/time-tracking.md` |
+| Daily Checklist | `docs/daily-checklist.md` |
 | Collaboration | `docs/collaboration.md` |
 | Real-time Sync | `docs/realtime.md` |
 | Notifications | `docs/notifications.md` |

@@ -2,6 +2,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import {
   account,
   channelMember,
+  checklistTask,
   commentReaction,
   mutedEntity,
   notification,
@@ -107,6 +108,8 @@ export async function purgeUser(
     await tx.delete(taskWatcher).where(eq(taskWatcher.userId, userId));
     await tx.delete(timeEntry).where(eq(timeEntry.userId, userId));
     await tx.delete(commentReaction).where(eq(commentReaction.userId, userId));
+    // Occurrences cascade from their items
+    await tx.delete(checklistTask).where(eq(checklistTask.userId, userId));
     // Memberships (comments & activity logs intentionally kept — "Deleted User" fallback)
     await tx.delete(spaceMember).where(eq(spaceMember.userId, userId));
     await tx.delete(workspaceMember).where(eq(workspaceMember.userId, userId));

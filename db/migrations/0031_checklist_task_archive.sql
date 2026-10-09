@@ -1,0 +1,1 @@
+ALTER TABLE "checklist_task" ADD COLUMN "archived_at" timestamp with time zone;

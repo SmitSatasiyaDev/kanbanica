@@ -18,6 +18,7 @@ import {
   GearIcon,
   KeyboardIcon,
   LightningIcon,
+  ListChecksIcon,
   ListIcon,
   LockSimpleIcon,
   MagnifyingGlassIcon,
@@ -59,6 +60,10 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { CreateSpaceModal } from "@/components/workspace/create-space-modal";
+import {
+  FocusModeProvider,
+  useFocusMode,
+} from "@/components/workspace/focus-mode-context";
 import { SpaceActionDialog } from "@/components/workspace/space-action-dialog";
 import { TaskLimitBanner } from "@/components/workspace/task-limit-banner";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
@@ -151,7 +156,15 @@ function workspaceBadge(ws: WorkspaceSummary) {
   return ws.logoEmoji ?? ws.name.charAt(0).toUpperCase();
 }
 
-export function WorkspaceShell({
+export function WorkspaceShell(props: WorkspaceShellProps) {
+  return (
+    <FocusModeProvider>
+      <WorkspaceShellInner {...props} />
+    </FocusModeProvider>
+  );
+}
+
+function WorkspaceShellInner({
   children,
   workspace,
   workspaces,
@@ -165,6 +178,7 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { focusMode } = useFocusMode();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   // Key of the currently-open sidebar three-dot menu (space / list), so it can
   // be closed when an item is selected. Only one menu is open at a time.
@@ -496,7 +510,12 @@ export function WorkspaceShell({
       {/* Sidebar — full height */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 flex w-60 shrink-0 flex-col border-r border-base-300 bg-(--bg-sidebar) transition-transform duration-200 lg:static lg:h-full",
+          "fixed inset-y-0 left-0 z-30 flex w-60 shrink-0 flex-col border-r border-base-300 bg-(--bg-sidebar) transition-[transform,margin,opacity,visibility] duration-200 ease-out motion-reduce:transition-none lg:static lg:h-full",
+          // Focus Mode: slide the sidebar out (margin frees the width without
+          // squashing its contents) and fade it; `invisible` also removes it
+          // from the tab order once the fade finishes.
+          focusMode &&
+            "invisible -translate-x-full opacity-0 lg:translate-x-0 lg:-ml-60",
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
@@ -575,6 +594,14 @@ export function WorkspaceShell({
                 label: "My Tasks",
                 icon: (
                   <CheckCircleIcon className="size-4 shrink-0" weight="fill" />
+                ),
+                badge: null,
+              },
+              {
+                href: `/${workspace.id}/daily-checklist`,
+                label: "Daily Checklist",
+                icon: (
+                  <ListChecksIcon className="size-4 shrink-0" weight="fill" />
                 ),
                 badge: null,
               },
@@ -1621,11 +1648,17 @@ function TopbarRightColumn({
   children: React.ReactNode;
 }) {
   const topbar = useTopbarState();
+  const { focusMode } = useFocusMode();
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {/* Top bar */}
-      <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-base-300 bg-surface px-4 gap-3">
+      {/* Top bar (hidden, not unmounted, in Focus Mode) */}
+      <header
+        className={cn(
+          "sticky top-0 z-40 flex h-12 shrink-0 items-center overflow-hidden border-b border-base-300 bg-surface px-4 gap-3 transition-[height,opacity,visibility,border-color] duration-200 ease-out motion-reduce:transition-none",
+          focusMode && "invisible h-0 border-transparent opacity-0"
+        )}
+      >
         {/* Mobile sidebar toggle */}
         <Button
           className="size-8 lg:hidden shrink-0"
@@ -1702,13 +1735,22 @@ function TopbarRightColumn({
         </button>
       </header>
 
-      <TaskLimitBanner
-        capacity={taskCapacity}
-        isAdmin={isAdmin}
-        workspaceId={workspaceId}
-      />
-      <PushNotificationBanner workspaceId={workspaceId} />
-      <PinnedTasksBar workspaceId={workspaceId} />
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+          focusMode ? "invisible grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
+        )}
+      >
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          <TaskLimitBanner
+            capacity={taskCapacity}
+            isAdmin={isAdmin}
+            workspaceId={workspaceId}
+          />
+          <PushNotificationBanner workspaceId={workspaceId} />
+          <PinnedTasksBar workspaceId={workspaceId} />
+        </div>
+      </div>
       <main className="flex-1 overflow-auto bg-app">{children}</main>
     </div>
   );

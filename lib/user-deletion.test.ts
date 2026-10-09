@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   account,
   channelMember,
+  checklistTask,
   commentReaction,
   mutedEntity,
   notification,
@@ -138,6 +139,7 @@ describe("purgeUser", () => {
       taskWatcher,
       timeEntry,
       commentReaction,
+      checklistTask,
       spaceMember,
       workspaceMember,
       channelMember,

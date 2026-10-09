@@ -5,10 +5,13 @@
 // writing if the README has drifted out of sync, so a hand-edited or
 // forgotten update gets caught before it reaches a customer.
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  ".."
+);
 const pkgPath = path.join(rootDir, "package.json");
 const readmePath = path.join(rootDir, "README.md");
 
@@ -19,7 +22,9 @@ const IMAGE = "ghcr.io/stack256org/kanbanica";
 const { version } = JSON.parse(readFileSync(pkgPath, "utf8"));
 
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error(`package.json version "${version}" is not plain X.Y.Z — refusing to generate a tag block from it.`);
+  console.error(
+    `package.json version "${version}" is not plain X.Y.Z — refusing to generate a tag block from it.`
+  );
   process.exit(1);
 }
 
@@ -41,7 +46,9 @@ const readme = readFileSync(readmePath, "utf8");
 const pattern = new RegExp(`${BEGIN}[\\s\\S]*?${END}`);
 
 if (!pattern.test(readme)) {
-  console.error(`Could not find ${BEGIN} ... ${END} markers in README.md — nothing to sync.`);
+  console.error(
+    `Could not find ${BEGIN} ... ${END} markers in README.md — nothing to sync.`
+  );
   process.exit(1);
 }
 

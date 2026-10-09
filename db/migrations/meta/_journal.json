@@ -211,6 +211,41 @@
       "when": 1791194550114,
       "tag": "0029_task_trash",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791461714344,
+      "tag": "0030_checklist_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791518386675,
+      "tag": "0031_checklist_task_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791519637308,
+      "tag": "0032_checklist_drop_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791519640252,
+      "tag": "0033_checklist_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791521947737,
+      "tag": "0034_checklist_drop_priority",
+      "breakpoints": true
     }
   ]
 }
