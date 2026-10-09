@@ -184,6 +184,25 @@ function TooltipContent({
     return () => document.removeEventListener("keydown", handleKeyDown, true)
   }, [open, setOpen])
 
+  // The tooltip body can be shifted along the edge to stay inside the viewport
+  // (e.g. a trigger in the top-right corner), so a centered arrow would point
+  // at empty space. Aim it at the trigger's center instead, clamped to the
+  // body so it never leaves the rounded corners.
+  const [arrowOffset, setArrowOffset] = React.useState<number | null>(null)
+  React.useLayoutEffect(() => {
+    const trigger = triggerRef.current
+    const content = contentRef.current
+    if (!mounted || !trigger || !content) return
+    const t = trigger.getBoundingClientRect()
+    const c = content.getBoundingClientRect()
+    const vertical = placement.startsWith("top") || placement.startsWith("bottom")
+    const raw = vertical
+      ? t.left + t.width / 2 - c.left
+      : t.top + t.height / 2 - c.top
+    const max = (vertical ? c.width : c.height) - 12
+    setArrowOffset(Math.min(Math.max(raw, 12), Math.max(max, 12)))
+  }, [mounted, placement, styles, triggerRef, contentRef])
+
   if (!mounted) return null
 
   const resolvedSide = placement.split("-")[0] as Side
@@ -210,6 +229,13 @@ function TooltipContent({
         {children}
         <span
           data-slot="tooltip-arrow"
+          style={
+            arrowOffset === null
+              ? undefined
+              : resolvedSide === "top" || resolvedSide === "bottom"
+                ? { left: arrowOffset }
+                : { top: arrowOffset }
+          }
           className={cn(
             "absolute z-50 size-2.5 rotate-45 rounded-none bg-base-content",
             resolvedSide === "top" && "top-full left-1/2 -translate-x-1/2 -translate-y-1/2",

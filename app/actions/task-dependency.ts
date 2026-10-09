@@ -84,7 +84,7 @@ export async function addDependency(
 
   // Verify the dependency target exists and is in the same workspace
   const [target] = await db
-    .select({ id: task.id, workspaceId: task.workspaceId })
+    .select({ id: task.id, workspaceId: task.workspaceId, title: task.title })
     .from(task)
     .where(and(eq(task.id, dependsOnTaskId), notDeleted()))
     .limit(1);
@@ -125,8 +125,10 @@ export async function addDependency(
     type: "BLOCKED_BY",
   });
 
+  // `depends_on_task_title` is what describeEvent() renders; keep the id too.
   await writeActivityLog(taskId, session.user.id, "dependency_added", {
     dependsOnTaskId,
+    depends_on_task_title: target.title,
   });
   revalidateList(workspaceId, spaceId, listId, taskId);
   return { dependencyId: depId };
@@ -154,8 +156,12 @@ export async function removeDependency(
   }
 
   const [dep] = await db
-    .select({ dependsOnTaskId: taskDependency.dependsOnTaskId })
+    .select({
+      dependsOnTaskId: taskDependency.dependsOnTaskId,
+      title: task.title,
+    })
     .from(taskDependency)
+    .leftJoin(task, eq(task.id, taskDependency.dependsOnTaskId))
     .where(eq(taskDependency.id, dependencyId))
     .limit(1);
 
@@ -163,6 +169,7 @@ export async function removeDependency(
 
   await writeActivityLog(taskId, session.user.id, "dependency_removed", {
     dependsOnTaskId: dep?.dependsOnTaskId,
+    depends_on_task_title: dep?.title ?? undefined,
   });
   revalidateList(workspaceId, spaceId, listId, taskId);
   return { ok: true };

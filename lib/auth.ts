@@ -1,11 +1,20 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin } from "better-auth/plugins/admin";
+import { emailOTP } from "better-auth/plugins/email-otp";
 import { magicLink } from "better-auth/plugins/magic-link";
 import { and, eq, sql } from "drizzle-orm";
 import { ADMIN_ROLE, PRODUCT_NAME } from "@/config/platform";
 import * as schema from "@/db/schema";
 import { audit } from "@/lib/audit";
+import {
+  canSendLoginEmail,
+  canVerifyLoginCode,
+  SIGN_IN_CODE_MAX_ATTEMPTS,
+  SIGN_IN_CODE_TTL_SECONDS,
+  signInOtpIdentifier,
+} from "@/lib/auth-code";
 import { db } from "@/lib/db";
 import { enqueueEmail } from "@/lib/email";
 import { magicLinkTemplate } from "@/lib/email/templates/magic-link";
@@ -14,8 +23,17 @@ import { verifyEmailTemplate } from "@/lib/email/templates/verify-email";
 import { env } from "@/lib/env";
 import {
   getGoogleOAuthSettings,
+  isPasswordSignupEnabled,
   isSmtpConfigured,
 } from "@/lib/integration-settings";
+import {
+  deriveSignInCode,
+  LOGIN_PROOF_COOKIE,
+  LOGIN_PROOF_MAX_AGE_SECONDS,
+  LOGIN_TOKEN_HEADER,
+  loginProof,
+  proofMatches,
+} from "@/lib/login-proof";
 
 // Top-level await: resolved once, the first time this module is imported in
 // a given server process, then baked into the betterAuth() singleton below
@@ -74,6 +92,19 @@ export async function isGoogleOAuthLive(): Promise<boolean> {
   );
 }
 
+// Lets `sendMagicLink` (defined inside the config) mint the sign-in code via
+// the server-only emailOTP endpoint without a self-referential type cycle.
+let authRef:
+  | {
+      api: {
+        createVerificationOTP: (args: {
+          body: { email: string; type: "sign-in" };
+          headers: Headers;
+        }) => Promise<string>;
+      };
+    }
+  | undefined;
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -91,9 +122,12 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    // Self-serve registration is an explicit opt-in (see lib/env.ts). Sign-IN
-    // is always on, so `create:admin`-provisioned accounts keep working.
-    disableSignUp: !env.ALLOW_PASSWORD_SIGNUP,
+    // Self-serve registration is an explicit opt-in, but it is NOT decided here:
+    // this object is built once per process, and the switch lives in Orbit →
+    // Settings (DB, `.env` fallback) so it must apply without a restart. The
+    // `before` hook below rejects `/sign-up/email` while it is off. Sign-IN is
+    // always on, so `create:admin`-provisioned accounts keep working.
+    disableSignUp: false,
     minPasswordLength: 8,
     maxPasswordLength: 128,
     // Only enforce verification when we can actually deliver the email —
@@ -175,10 +209,53 @@ export const auth = betterAuth({
       impersonationSessionDuration: 3600,
       allowImpersonatingAdmins: false,
     }),
+    // Verification-code sign-in. The code is minted inside `sendMagicLink`
+    // below and emailed together with the link, so this plugin's own send
+    // route is never used (its sender is a no-op and the route is blocked).
+    // Stored hashed in the `verification` table; 5 wrong tries lock the code.
+    emailOTP({
+      otpLength: 6,
+      expiresIn: SIGN_IN_CODE_TTL_SECONDS,
+      allowedAttempts: SIGN_IN_CODE_MAX_ATTEMPTS,
+      storeOTP: "hashed",
+      // Derive the code from the magic-link token so the same code can be
+      // shown on the cross-browser fallback page (see lib/login-proof.ts).
+      generateOTP: (_data, ctx) => {
+        const token = ctx?.headers?.get(LOGIN_TOKEN_HEADER);
+        return token ? deriveSignInCode(token) : "";
+      },
+      sendVerificationOTP: async () => {},
+    }),
     magicLink({
-      sendMagicLink: async ({ email, url }) => {
+      sendMagicLink: async ({ email, url, token }, ctx) => {
+        // Per-email throttle (known and unknown emails alike).
+        if (!canSendLoginEmail(email)) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: "Too many requests",
+            code: "TOO_MANY_REQUESTS",
+          });
+        }
+        // A new request replaces any earlier code: only the newest works.
+        const normalized = email.toLowerCase();
+        await ctx?.context.internalAdapter.deleteVerificationByIdentifier(
+          signInOtpIdentifier(normalized)
+        );
+        await authRef?.api.createVerificationOTP({
+          body: { email: normalized, type: "sign-in" },
+          headers: new Headers({ [LOGIN_TOKEN_HEADER]: token }),
+        });
+        // Bind this login request to the requesting browser.
+        ctx?.setCookie(LOGIN_PROOF_COOKIE, loginProof(token), {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: env.NODE_ENV === "production",
+          path: "/",
+          maxAge: LOGIN_PROOF_MAX_AGE_SECONDS,
+        });
         // Dev convenience: print the link so you can sign in without SMTP.
         // Never log the email + magic-link URL in production (sensitive).
+        // The verification code is generated here but deliberately NOT emailed
+        // or logged: it is only revealed by the cross-browser fallback page.
         if (env.NODE_ENV !== "production") {
           console.log(`[magic-link] ${email} → ${url}`);
         }
@@ -228,7 +305,43 @@ export const auth = betterAuth({
       "/sign-up/email": { window: 60, max: 5 },
       "/request-password-reset": { window: 60, max: 3 },
       "/reset-password": { window: 60, max: 5 },
+      "/sign-in/email-otp": { window: 60, max: 10 },
+      // Unused (the code ships in the magic-link email); keep it near-closed.
+      "/email-otp/send-verification-otp": { window: 3600, max: 1 },
     },
+  },
+  hooks: {
+    // Per-email brute-force guard on code sign-in, on top of the per-code
+    // attempt limit and the per-IP limit.
+    before: createAuthMiddleware(async (ctx) => {
+      // Magic link opened in a different browser than the one that asked for
+      // it: don't sign in; show the verification-code fallback instead.
+      if (ctx.path === "/magic-link/verify") {
+        const token = (ctx.query as { token?: unknown } | undefined)?.token;
+        if (
+          typeof token === "string" &&
+          !proofMatches(ctx.getCookie(LOGIN_PROOF_COOKIE), token)
+        ) {
+          throw ctx.redirect(`/login/code?token=${encodeURIComponent(token)}`);
+        }
+      }
+      if (ctx.path === "/sign-up/email" && !(await isPasswordSignupEnabled())) {
+        // Same shape Better Auth's own `disableSignUp` produces.
+        throw new APIError("BAD_REQUEST", {
+          message: "Email and password sign up is not enabled",
+          code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+        });
+      }
+      if (ctx.path === "/sign-in/email-otp") {
+        const email = (ctx.body as { email?: unknown } | undefined)?.email;
+        if (typeof email === "string" && !canVerifyLoginCode(email)) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: "Too many requests",
+            code: "TOO_MANY_REQUESTS",
+          });
+        }
+      }
+    }),
   },
   databaseHooks: {
     user: {
@@ -280,3 +393,5 @@ export const auth = betterAuth({
     },
   },
 });
+
+authRef = auth;

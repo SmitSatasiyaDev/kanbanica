@@ -106,7 +106,7 @@ It's built for teams who want a complete, production-grade project tool without 
 **For whoever runs it**
 
 - **Two-level permissions** — workspace roles plus per-project access, with guests scoped to only the projects they're invited to
-- **Flexible auth** — magic link, Google OAuth, or email + password, all converging on one account per email
+- **Flexible auth** — magic link (with a 6-digit code fallback across browsers), Google OAuth, or email + password, all converging on one account per email
 - **Notifications** — in-app, email digests, and Web Push
 - **Help Center & Support Tickets** — a self-serve article library plus a ticket-based support channel for your users
 - **Admin panel** — user management, integration settings, and platform-wide visibility
@@ -197,10 +197,10 @@ Point your platform at the published image directly rather than building from so
 Pin a version in production, because `latest` moves with every release:
 
 ```bash
-docker pull ghcr.io/stack256org/kanbanica:0.4.0
+docker pull ghcr.io/stack256org/kanbanica:0.5.0
 ```
 
-Also tagged `0`, `0.4`, and `latest` — every tag covers both Intel and ARM.
+Also tagged `0`, `0.5`, and `latest` — every tag covers both Intel and ARM.
 <!-- END GENERATED: image-tag -->
 
 **Railway, Render, Fly.io, or anything else building from source.**

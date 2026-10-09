@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
 import {
   isGoogleOAuthConfigured,
+  isPasswordSignupEnabled,
   isSmtpConfigured,
 } from "@/lib/integration-settings";
 
@@ -28,16 +29,17 @@ export type AuthMethods = {
 };
 
 export async function getAuthMethods(): Promise<AuthMethods> {
-  const [google, smtp] = await Promise.all([
+  const [google, smtp, passwordSignup] = await Promise.all([
     isGoogleOAuthConfigured(),
     isSmtpConfigured(),
+    isPasswordSignupEnabled(),
   ]);
   return {
     google,
     // In development magic links are printed to the console, so they remain
     // usable without SMTP.
     magicLink: smtp || env.NODE_ENV !== "production",
-    passwordSignup: env.ALLOW_PASSWORD_SIGNUP,
+    passwordSignup,
     passwordReset: smtp,
     requiresEmailVerification: smtp,
   };

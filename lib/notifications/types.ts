@@ -64,6 +64,33 @@ export function emailDefaultFor(triggerType: string): boolean {
 }
 
 /**
+ * Opt-in events: in-app AND push default OFF for a user who has never saved a
+ * preference for the trigger. Everything else defaults ON. `task_created` is
+ * ambient activity (it fans out to every project member), so it is quiet until
+ * someone turns it on in notification settings — assignees are unaffected, they
+ * get `task_assigned` instead. A saved preference row always wins, either way.
+ *
+ * SINGLE SOURCE OF TRUTH. Every place that needs an in-app/push default calls
+ * `inAppDefaultFor()` / `pushDefaultFor()` — the API fallback and the
+ * notification fan-out.
+ */
+export const OPT_IN_TRIGGERS = [
+  "task_created",
+] as const satisfies readonly NotificationTriggerType[];
+
+const OPT_IN = new Set<string>(OPT_IN_TRIGGERS);
+
+/** Whether `triggerType` creates an in-app notification when the user has no stored preference. */
+export function inAppDefaultFor(triggerType: string): boolean {
+  return !OPT_IN.has(triggerType);
+}
+
+/** Whether `triggerType` sends web push when the user has no stored preference. */
+export function pushDefaultFor(triggerType: string): boolean {
+  return !OPT_IN.has(triggerType);
+}
+
+/**
  * Events whose per-trigger "Sound" toggle defaults ON: the ones that are
  * about you (assignment, mention, reply, invite). Everything else defaults
  * to sound OFF, same rationale as `EMAIL_DEFAULT_ENABLED_TRIGGERS`. Users can

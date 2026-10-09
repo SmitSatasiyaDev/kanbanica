@@ -53,6 +53,12 @@ export const integrationSettings = pgTable("integration_settings", {
     .notNull()
     .default(true),
 
+  // Self-serve email + password sign-UP (/signup). Nullable on purpose:
+  // null = never set from the app, so `.env` ALLOW_PASSWORD_SIGNUP decides (and
+  // an `.env`-only deployment behaves exactly as before). true/false overrides it.
+  // Resolved per request — applies with no restart. Sign-IN is never affected.
+  passwordSignupEnabled: boolean("password_signup_enabled"),
+
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

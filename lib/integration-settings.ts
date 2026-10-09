@@ -191,7 +191,30 @@ export async function areNotificationEmailsEnabled(): Promise<boolean> {
   return row?.notificationEmailsEnabled ?? true;
 }
 
+/** DB override (when set) wins; otherwise the `.env` flag. Pure, for testing. */
+export function resolvePasswordSignup(
+  dbValue: boolean | null | undefined,
+  envValue: boolean
+): boolean {
+  return dbValue ?? envValue;
+}
+
+/**
+ * Whether self-serve email + password registration is open. DB column (if
+ * set) → `ALLOW_PASSWORD_SIGNUP` → closed. Resolved per call, no restart.
+ */
+export async function isPasswordSignupEnabled(): Promise<boolean> {
+  const row = await getRow();
+  return resolvePasswordSignup(
+    row?.passwordSignupEnabled,
+    env.ALLOW_PASSWORD_SIGNUP
+  );
+}
+
 export interface IntegrationSettingsSummary {
+  /** Effective value (DB override → `.env`), unlike the DB-only fields below —
+   * the admin needs to see what is actually in force. */
+  auth: { passwordSignupEnabled: boolean };
   google: { clientId: string; hasClientSecret: boolean };
   notifications: { emailsEnabled: boolean };
   smtp: {
@@ -227,6 +250,12 @@ export interface IntegrationSettingsSummary {
 export async function getIntegrationSettingsSummary(): Promise<IntegrationSettingsSummary> {
   const row = await getRow();
   return {
+    auth: {
+      passwordSignupEnabled: resolvePasswordSignup(
+        row?.passwordSignupEnabled,
+        env.ALLOW_PASSWORD_SIGNUP
+      ),
+    },
     notifications: { emailsEnabled: row?.notificationEmailsEnabled ?? true },
     smtp: {
       host: row?.smtpHost ?? "",

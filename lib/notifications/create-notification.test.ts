@@ -94,7 +94,7 @@ function baseParams(
     workspaceId: "w1",
     actorId: null,
     recipientIds: ["u1"],
-    triggerType: "task_created",
+    triggerType: "task_status_changed",
     entityType: "TASK",
     entityId: "t1",
     title: "Title",
@@ -167,6 +167,42 @@ describe("createNotifications", () => {
   it("defaults in-app notifications to enabled when no preference row exists", async () => {
     queueSelectResults([], []);
     createNotifications(baseParams());
+    await flush();
+    expect(insertValuesSpy).toHaveBeenCalledTimes(1);
+    expect(pushToUserMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("task_created is opt-in: with no preference row, no in-app notification and no push", async () => {
+    queueSelectResults([], []);
+    createNotifications(baseParams({ triggerType: "task_created" }));
+    await flush();
+    expect(insertMock).not.toHaveBeenCalled();
+    expect(pushToUserMock).not.toHaveBeenCalled();
+    expect(sendPushToUserMock).not.toHaveBeenCalled();
+  });
+
+  it("task_created still reaches a user who explicitly enabled it", async () => {
+    queueSelectResults(
+      [],
+      [
+        {
+          userId: "u1",
+          inAppEnabled: true,
+          emailEnabled: false,
+          pushEnabled: true,
+        },
+      ]
+    );
+    createNotifications(baseParams({ triggerType: "task_created" }));
+    await flush();
+    expect(insertValuesSpy).toHaveBeenCalledTimes(1);
+    expect(pushToUserMock).toHaveBeenCalledTimes(1);
+    expect(sendPushToUserMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("task_assigned is unaffected: it still defaults on with no preference row", async () => {
+    queueSelectResults([], []);
+    createNotifications(baseParams({ triggerType: "task_assigned" }));
     await flush();
     expect(insertValuesSpy).toHaveBeenCalledTimes(1);
     expect(pushToUserMock).toHaveBeenCalledTimes(1);

@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  CheckCircleIcon,
   EnvelopeIcon,
   PaperPlaneTiltIcon,
   SignInIcon,
@@ -31,7 +30,8 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
 import type { AuthMethods } from "@/lib/auth-config";
-import { authErrorMessage } from "@/lib/auth-errors";
+import { authClientErrorMessage, authErrorMessage } from "@/lib/auth-errors";
+import { SentPanel } from "./sent-panel";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -98,7 +98,7 @@ function useLoginForm(methods: AuthMethods) {
 
     if (error) {
       form.setError("root", {
-        message: authErrorMessage(error.code, error.message),
+        message: authClientErrorMessage(error),
       });
       return;
     }
@@ -106,6 +106,23 @@ function useLoginForm(methods: AuthMethods) {
     toast.success("Magic link sent!", {
       description: "Check your inbox to sign in.",
     });
+  }
+
+  async function resendEmail(): Promise<string | null> {
+    const { error } = await authClient.signIn.magicLink({
+      email: form.getValues("email"),
+      callbackURL: "/post-auth",
+    });
+    if (error) {
+      return authClientErrorMessage(error);
+    }
+    toast.success("Email sent", { description: "Check your inbox." });
+    return null;
+  }
+
+  function resetToNewEmail() {
+    form.reset({ email: "", password: "" });
+    setSent(false);
   }
 
   async function onSubmit({ email, password }: FormData) {
@@ -144,6 +161,8 @@ function useLoginForm(methods: AuthMethods) {
     isValid,
     handleGoogleSignIn,
     sendMagicLink,
+    resendEmail,
+    resetToNewEmail,
     onSubmit,
   };
 }
@@ -188,6 +207,8 @@ export function LoginFormFlat({
     isValid,
     handleGoogleSignIn,
     sendMagicLink,
+    resendEmail,
+    resetToNewEmail,
     onSubmit,
   } = useLoginForm(methods);
 
@@ -195,33 +216,12 @@ export function LoginFormFlat({
 
   if (sent) {
     return (
-      <div className="flex flex-col items-center gap-4 py-6 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-          <CheckCircleIcon className="size-6 text-primary" weight="duotone" />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-xl font-bold tracking-tight text-base-content">
-            Check your inbox
-          </h2>
-          <p className="text-sm leading-relaxed text-base-content/70">
-            We sent a sign-in link to{" "}
-            <span className="font-semibold text-base-content">
-              {form.getValues("email")}
-            </span>
-            .
-          </p>
-        </div>
-        <p className="text-base-content/60 text-xs">
-          {"Didn't receive it? "}
-          <button
-            className="underline underline-offset-4 hover:text-base-content transition-colors"
-            onClick={() => setSent(false)}
-            type="button"
-          >
-            Try again
-          </button>
-        </p>
-      </div>
+      <SentPanel
+        email={form.getValues("email")}
+        onDifferentEmail={resetToNewEmail}
+        onResend={resendEmail}
+        onTryAgain={() => setSent(false)}
+      />
     );
   }
 
@@ -366,6 +366,8 @@ export function LoginFormFlat({
         </form>
       </Form>
 
+      {/* Sign-up link hidden for now (sign-up is not offered from the login
+          page). To bring it back, uncomment:
       {passwordEnabled && (
         <p className="text-center text-sm text-base-content/70">
           {"Don't have an account? "}
@@ -377,6 +379,7 @@ export function LoginFormFlat({
           </Link>
         </p>
       )}
+      */}
 
       <TermsNotice className="pt-1" />
     </div>
@@ -399,6 +402,8 @@ export function LoginForm({
     isSubmitting,
     isValid,
     handleGoogleSignIn,
+    resendEmail,
+    resetToNewEmail,
     onSubmit,
   } = useLoginForm(methods);
   const passwordEnabled = methods.passwordSignup;
@@ -406,30 +411,13 @@ export function LoginForm({
   if (sent) {
     return (
       <Card className="rounded-xl">
-        <CardContent className="flex flex-col items-center gap-4 pb-8 pt-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <CheckCircleIcon className="size-6 text-primary" weight="duotone" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="font-semibold text-lg">Check your inbox</h2>
-            <p className="text-base-content/60 text-sm">
-              We sent a sign-in link to{" "}
-              <span className="font-medium text-base-content">
-                {form.getValues("email")}
-              </span>
-              .
-            </p>
-          </div>
-          <p className="text-base-content/60 text-xs">
-            {"Didn't receive it? "}
-            <button
-              className="underline underline-offset-4 hover:text-base-content transition-colors"
-              onClick={() => setSent(false)}
-              type="button"
-            >
-              Try again
-            </button>
-          </p>
+        <CardContent className="pb-6 pt-6">
+          <SentPanel
+            email={form.getValues("email")}
+            onDifferentEmail={resetToNewEmail}
+            onResend={resendEmail}
+            onTryAgain={() => setSent(false)}
+          />
         </CardContent>
       </Card>
     );

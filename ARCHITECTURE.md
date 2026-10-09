@@ -55,7 +55,7 @@ In development, `pnpm dev` runs both together via `concurrently`, against a bund
 
 ## Authentication & authorization
 
-- **Auth:** Better Auth (`lib/auth.ts`) — passwordless **magic link** (email) and optional **Google OAuth**. `baseURL` derives from `APP_URL`. In production the app requires at least one auth provider to be configured (`lib/env.ts`).
+- **Auth:** Better Auth (`lib/auth.ts`) — passwordless **magic link** (email) — a 6-digit one-time code is shown only on the cross-browser fallback page, never emailed (Better Auth `emailOTP`, hashed in `verification`, 10 min, 5 attempts) — and optional **Google OAuth**. `baseURL` derives from `APP_URL`. In production the app requires at least one auth provider to be configured (`lib/env.ts`).
 - **Authorization:** two-level model — workspace role + per-project permission — enforced in `lib/` helpers and checked in every API route / server action. See [`docs/permission-model.md`](./docs/permission-model.md).
 
 ## File storage

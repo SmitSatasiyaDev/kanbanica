@@ -20,6 +20,12 @@ const MESSAGES: Record<string, string> = {
   TOKEN_EXPIRED: "This link has expired. Request a new one.",
   PASSWORD_TOO_SHORT: "Password must be at least 8 characters.",
   PASSWORD_TOO_LONG: "Password must be at most 128 characters.",
+  // Sign-in verification code (emailed with the magic link).
+  INVALID_OTP: "Incorrect verification code. Please try again.",
+  OTP_EXPIRED: "Verification code expired. Please request a new code.",
+  TOO_MANY_ATTEMPTS: "Too many attempts. Please request a new code.",
+  TOO_MANY_REQUESTS: "Too many attempts. Please wait a moment and try again.",
+  EMAIL_PASSWORD_SIGN_UP_DISABLED: "Registration is disabled on this instance.",
   signup_disabled: "Registration is disabled on this instance.",
 };
 
@@ -43,4 +49,16 @@ export function isUserExistsCode(code: string | null | undefined): boolean {
     code === "USER_ALREADY_EXISTS" ||
     code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
   );
+}
+
+/** Message for a Better Auth client error, covering bare 429 rate-limit replies. */
+export function authClientErrorMessage(error: {
+  code?: string | null;
+  message?: string | null;
+  status?: number;
+}): string {
+  if (error.status === 429 && !error.code) {
+    return MESSAGES.TOO_MANY_REQUESTS;
+  }
+  return authErrorMessage(error.code, error.message ?? undefined);
 }

@@ -35,6 +35,9 @@ export function MagicLinkEmail({
           {magicLinkUrl}
         </Link>
       </Text>
+      <Text style={emailStyles.muted}>
+        If you didn&apos;t request this email, you can safely ignore it.
+      </Text>
     </EmailLayout>
   );
 }
