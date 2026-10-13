@@ -150,6 +150,40 @@ describe("validateImportRow", () => {
     expect(result.errors[0]).toContain("not a valid date");
   });
 
+  it("keeps a YYYY-MM-DD due date as the same calendar day (no timezone shift)", async () => {
+    const result = await validateImportRow(
+      { Title: "Fix bug", Start: "2030-01-01", Due: "2030-01-31" },
+      { Title: "title", Start: "dueDateStart", Due: "dueDateEnd" },
+      baseContext(),
+      1
+    );
+    expect(result.data?.dueDateStart).toBe("2030-01-01");
+    expect(result.data?.dueDateEnd).toBe("2030-01-31");
+  });
+
+  it("takes the date part of a full ISO timestamp (older exports)", async () => {
+    const result = await validateImportRow(
+      { Title: "Fix bug", Due: "2030-01-31T00:00:00.000Z" },
+      { Title: "title", Due: "dueDateEnd" },
+      baseContext(),
+      1
+    );
+    expect(result.data?.dueDateEnd).toBe("2030-01-31");
+  });
+
+  it("rejects impossible calendar days and non-ISO formats", async () => {
+    for (const bad of ["2030-02-30", "01/31/2030", "Jan 31 2030"]) {
+      const result = await validateImportRow(
+        { Title: "Fix bug", Due: bad },
+        { Title: "title", Due: "dueDateEnd" },
+        baseContext(),
+        1
+      );
+      expect(result.status).toBe("invalid");
+      expect(result.errors[0]).toContain("YYYY-MM-DD");
+    }
+  });
+
   it("warns when the due date is before the start date", async () => {
     const result = await validateImportRow(
       { Title: "Fix bug", Start: "2026-02-10", Due: "2026-02-01" },

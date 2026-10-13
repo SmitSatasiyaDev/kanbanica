@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import * as React from "react";
 import useSWR from "swr";
+import { useTimezone } from "@/components/common/timezone-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -84,6 +86,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function NotificationSettingsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
+  const timezone = useTimezone();
 
   // Page header renders in the topbar, not in the content body.
   useSetTopbar({
@@ -306,6 +309,17 @@ export default function NotificationSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+          )}
+          {deliveryMode === "digest" && (
+            <p className="text-xs text-base-content/60">
+              Sent in your timezone ({timezone.replace(/_/g, " ")}).{" "}
+              <Link
+                className="text-primary underline"
+                href={`/${workspaceId}/profile`}
+              >
+                Change
+              </Link>
+            </p>
           )}
           <Button
             disabled={saving || emailBlockedByAdmin}

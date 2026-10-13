@@ -1,5 +1,6 @@
 import type { CustomFieldRow } from "@/app/actions/custom-field";
 import { validateCustomFieldValue } from "@/lib/custom-fields/validation";
+import { isValidDateStr } from "@/lib/due-date";
 import {
   FIXED_MAPPABLE_FIELDS,
   IGNORE_TARGET,
@@ -51,8 +52,8 @@ export interface MappedTaskData {
   // fieldId -> validated value, ready for customFieldValue insertion.
   customFieldValues: Record<string, unknown>;
   description: string | null;
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   parentRef: ParentRef;
   priority: Priority;
   statusId: string | null;
@@ -204,26 +205,26 @@ export async function validateImportRow(
   }
 
   // ─── Dates ───────────────────────────────────────────────────────────────
-  function parseDate(raw: string, label: string): Date | null {
+  // Due dates are calendar days. Accepts `YYYY-MM-DD` (what the export writes)
+  // and, for older exports, a full ISO timestamp — whose leading date part is used.
+  function parseDate(raw: string, label: string): string | null {
     if (!raw) {
       return null;
     }
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) {
-      errors.push(`${label} "${raw}" is not a valid date`);
+    const day = raw.trim().slice(0, 10);
+    if (
+      !(/^\d{4}-\d{2}-\d{2}(?:$|T)/.test(raw.trim()) && isValidDateStr(day))
+    ) {
+      errors.push(`${label} "${raw}" is not a valid date (use YYYY-MM-DD)`);
       return null;
     }
-    return d;
+    return day;
   }
   const dueDateStartRaw = cell(row, mapping, "dueDateStart");
   const dueDateEndRaw = cell(row, mapping, "dueDateEnd");
   const dueDateStart = parseDate(dueDateStartRaw, "Start date");
   const dueDateEnd = parseDate(dueDateEndRaw, "Due date");
-  if (
-    dueDateStart &&
-    dueDateEnd &&
-    dueDateEnd.getTime() < dueDateStart.getTime()
-  ) {
+  if (dueDateStart && dueDateEnd && dueDateEnd < dueDateStart) {
     warnings.push("Due date is before the start date");
   }
 
@@ -411,7 +412,7 @@ export function detectDuplicateRowIndexes(
       data.title.toLowerCase(),
       data.statusId ?? "",
       [...data.assigneeIds].sort().join(","),
-      data.dueDateEnd?.toISOString() ?? "",
+      data.dueDateEnd ?? "",
     ].join("|");
     if (seen.has(key)) {
       duplicates.add(rowIndex);

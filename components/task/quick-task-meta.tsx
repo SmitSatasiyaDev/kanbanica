@@ -21,6 +21,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { dateToDay } from "@/lib/due-date";
 import { PRIORITY_CONFIG, type Priority } from "@/lib/priority-config";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,7 @@ export function hasQuickMeta(m: QuickTaskMetaValue): boolean {
 export function quickMetaCreateFields(m: QuickTaskMetaValue) {
   return {
     ...(m.priority !== "NONE" && { priority: m.priority }),
-    ...(m.dueDate && { dueDateEnd: m.dueDate }),
+    ...(m.dueDate && { dueDateEnd: dateToDay(m.dueDate) }),
     ...(m.assigneeIds.length > 0 && { assigneeIds: m.assigneeIds }),
     ...(m.tagIds.length > 0 && { tagIds: m.tagIds }),
     ...(m.statusId && { statusId: m.statusId }),

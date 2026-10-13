@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { dateStrToLocalDate, dateToDay } from "@/lib/due-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ export function CreateSprintModal({
       }
       setName(result.suggestedName);
       if (result.suggestedStartDate) {
-        setStartDate(result.suggestedStartDate);
+        setStartDate(dateStrToLocalDate(result.suggestedStartDate));
       }
       setDurationWeeks(Math.min(4, Math.max(1, result.durationWeeks)));
       setSprintStartDay(result.sprintStartDay);
@@ -106,7 +107,7 @@ export function CreateSprintModal({
       const result = await createSprint(workspaceId, spaceId, {
         name: name.trim(),
         goal: goal.trim() || undefined,
-        startDate,
+        startDate: dateToDay(startDate),
         durationWeeks,
       });
 

@@ -69,8 +69,8 @@ interface Task {
   assignees: { userId: string; name: string; image: string | null }[];
   customFieldValues?: Record<string, unknown>;
   dependencyInfo?: TaskDependencyIndicator;
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   isPinnedToList: boolean;
   orderIndex: number;

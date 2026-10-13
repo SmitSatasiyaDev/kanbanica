@@ -11,7 +11,6 @@ import {
   WarningIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { format, isPast, isThisWeek, isToday, startOfDay } from "date-fns";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import {
@@ -21,6 +20,7 @@ import {
 } from "@/app/actions/my-tasks";
 import type { MyFocusKind } from "@/app/actions/workspace-overview";
 import { SpaceIcon } from "@/components/common/space-icon";
+import { useToday } from "@/components/common/timezone-provider";
 import {
   Popover,
   PopoverContent,
@@ -33,6 +33,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatDay, toDay, weekRange } from "@/lib/due-date";
 import { setTaskNavContext, type TaskNavContext } from "@/lib/task-nav-context";
 import { cn } from "@/lib/utils";
 
@@ -60,20 +61,21 @@ const PRIORITY_CONFIG = {
   NONE: { label: "—", color: "text-base-content/40", icon: "😴" },
 } as const;
 
-function formatDue(task: MyTask): { label: string; overdue: boolean } | null {
-  const date = task.dueDateEnd ?? task.dueDateStart;
-  if (!date) {
+function formatDue(
+  task: MyTask,
+  today: string
+): { label: string; overdue: boolean } | null {
+  const day = toDay(task.dueDateEnd ?? task.dueDateStart);
+  if (!day) {
     return null;
   }
-  const d = new Date(date);
-  const overdue = isPast(d) && !isToday(d) && task.status.type !== "CLOSED";
-  if (isToday(d)) {
+  if (day === today) {
     return { label: "Today", overdue: false };
   }
-  if (overdue) {
-    return { label: format(d, "MMM d"), overdue: true };
-  }
-  return { label: format(d, "MMM d"), overdue: false };
+  return {
+    label: formatDay(day),
+    overdue: day < today && task.status.type !== "CLOSED",
+  };
 }
 
 // Narrows the list to one bucket from the Workspace Overview "My Focus
@@ -104,7 +106,8 @@ function parseFocusParam(value: string | null): MyFocusKind | null {
 
 function applyFocusFilter(
   tasks: MyTask[],
-  focus: MyFocusKind | null
+  focus: MyFocusKind | null,
+  today: string
 ): MyTask[] {
   if (!focus || focus === "assigned") {
     return tasks;
@@ -112,22 +115,20 @@ function applyFocusFilter(
   if (focus === "review") {
     return tasks.filter((t) => isReviewStatus(t.status.name));
   }
-  const today = startOfDay(new Date());
   return tasks.filter((t) => {
     if (t.status.type === "CLOSED") {
       return false;
     }
-    const due = t.dueDateEnd ?? t.dueDateStart;
+    const due = toDay(t.dueDateEnd ?? t.dueDateStart);
     if (!due) {
       return false;
     }
-    const d = startOfDay(new Date(due));
-    return focus === "overdue" ? d < today : isToday(d);
+    return focus === "overdue" ? due < today : due === today;
   });
 }
 
-function groupByDueDate(tasks: MyTask[]): Group[] {
-  const today = startOfDay(new Date());
+function groupByDueDate(tasks: MyTask[], today: string): Group[] {
+  const week = weekRange(today, 1);
 
   const overdue: MyTask[] = [];
   const dueToday: MyTask[] = [];
@@ -141,16 +142,16 @@ function groupByDueDate(tasks: MyTask[]): Group[] {
       noDate.push(t);
       continue;
     }
-    const d = startOfDay(new Date(date));
+    const d = toDay(date) ?? today;
     if (d < today) {
       overdue.push(t);
       continue;
     }
-    if (isToday(d)) {
+    if (d === today) {
       dueToday.push(t);
       continue;
     }
-    if (isThisWeek(d, { weekStartsOn: 1 })) {
+    if (d >= week.from && d <= week.to) {
       thisWeek.push(t);
       continue;
     }
@@ -318,10 +319,14 @@ function groupByStatus(tasks: MyTask[]): Group[] {
   }));
 }
 
-function buildGroups(tasks: MyTask[], groupBy: MyTasksGroupBy): Group[] {
+function buildGroups(
+  tasks: MyTask[],
+  groupBy: MyTasksGroupBy,
+  today: string
+): Group[] {
   switch (groupBy) {
     case "due_date":
-      return groupByDueDate(tasks);
+      return groupByDueDate(tasks, today);
     case "workspace":
       return groupByWorkspace(tasks);
     case "space":
@@ -340,7 +345,8 @@ function buildGroups(tasks: MyTask[], groupBy: MyTasksGroupBy): Group[] {
 function TaskRow({ task, taskNav }: { task: MyTask; taskNav: TaskNavContext }) {
   const router = useRouter();
   const priority = PRIORITY_CONFIG[task.priority];
-  const due = formatDue(task);
+  const today = useToday();
+  const due = formatDue(task, today);
   const titleRef = React.useRef<HTMLSpanElement>(null);
   const [titleTruncated, setTitleTruncated] = React.useState(false);
 
@@ -532,6 +538,7 @@ export function MyTasksView(_props: MyTasksViewProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const focus = parseFocusParam(searchParams.get("focus"));
+  const today = useToday();
 
   const fetchTasks = React.useCallback(async () => {
     setLoading(true);
@@ -553,9 +560,9 @@ export function MyTasksView(_props: MyTasksViewProps) {
   const filtered = search.trim()
     ? tasks.filter((t) => t.title.toLowerCase().includes(search.toLowerCase()))
     : tasks;
-  const focused = applyFocusFilter(filtered, focus);
+  const focused = applyFocusFilter(filtered, focus, today);
 
-  const groups = buildGroups(focused, groupBy);
+  const groups = buildGroups(focused, groupBy, today);
 
   // Previous/Next Task nav context: My Tasks is cross-workspace, so each
   // task's own workspace travels alongside its id — handed to Task Detail

@@ -67,6 +67,7 @@ import {
 } from "@/app/actions/task";
 import { addAssignee, removeAssignee } from "@/app/actions/task-assignee";
 import { ManageFieldsIcon } from "@/components/common/manage-fields-icon";
+import { useToday } from "@/components/common/timezone-provider";
 import { CustomFieldFilterControl } from "@/components/filters/custom-field-filter";
 import {
   CombinedFacetFilter,
@@ -145,6 +146,7 @@ import {
   DASHBOARD_CATEGORY_OPTIONS,
   type DashboardCategory,
 } from "@/lib/dashboard-category";
+import { dateStrToLocalDate, dateToDay } from "@/lib/due-date";
 import {
   flashDuplicatedTask,
   useIsDuplicateHighlighted,
@@ -197,8 +199,8 @@ interface Task {
   assignees: { userId: string; name: string; image: string | null }[];
   customFieldValues?: Record<string, unknown>;
   dependencyInfo?: TaskDependencyIndicator;
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   orderIndex: number;
   priority: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
@@ -515,7 +517,8 @@ function CardContent({
   // it on click. Left uncontrolled, the menu stayed open over the card and the
   // result only became visible once the user clicked outside.
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const dueDate = formatDueDate(task.dueDateEnd);
+  const today = useToday();
+  const dueDate = formatDueDate(task.dueDateEnd, today);
   const filteredMembers = members.filter((m) => {
     const q = memberSearch.trim().toLowerCase();
     if (!q) {
@@ -577,9 +580,10 @@ function CardContent({
     setDateOpen(false);
     // "Due Date" is the deadline (end date). Preserve an existing start date;
     // for tasks with no start, set both so single-date tasks stay consistent.
+    const day = date ? dateToDay(date) : null;
     const patch = task.dueDateStart
-      ? { dueDateEnd: date }
-      : { dueDateStart: date, dueDateEnd: date };
+      ? { dueDateEnd: day }
+      : { dueDateStart: day, dueDateEnd: day };
     const res = await updateTask(
       workspaceId!,
       spaceId!,
@@ -1029,7 +1033,11 @@ function CardContent({
                   <Calendar
                     mode="single"
                     onSelect={(date) => void handleSetDueDate(date ?? null)}
-                    selected={task.dueDateEnd ?? undefined}
+                    selected={
+                      task.dueDateEnd
+                        ? dateStrToLocalDate(task.dueDateEnd)
+                        : undefined
+                    }
                   />
                   {task.dueDateEnd && (
                     <div className="border-t border-base-300 p-1">

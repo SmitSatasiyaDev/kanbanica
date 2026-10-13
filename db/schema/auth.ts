@@ -10,6 +10,9 @@ export const user = pgTable("user", {
   // Personal, not workspace-scoped: applies across every workspace this user
   // opens. Accent color theme stays on `workspace` — that one's shared branding.
   appearanceMode: text("appearance_mode").notNull().default("auto"),
+  // IANA zone (e.g. "Asia/Kolkata") that decides what "today" means for this
+  // user's due-date logic. Auto-detected from the browser, editable in Profile.
+  timezone: text("timezone").notNull().default("UTC"),
   banned: boolean("banned").notNull().default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires", { withTimezone: true }),

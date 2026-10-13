@@ -35,7 +35,6 @@ import {
   TrayIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
@@ -116,8 +115,8 @@ interface Status {
 
 interface SprintTask {
   assignees: { userId: string; name: string; image: string | null }[];
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   listId: string | null;
   orderIndex: number;
@@ -132,11 +131,11 @@ interface SprintTask {
 }
 
 interface SprintInfo {
-  endDate: Date | null;
+  endDate: string | null;
   goal: string | null;
   id: string;
   name: string;
-  startDate: Date | null;
+  startDate: string | null;
   status: "PLANNED" | "ACTIVE" | "CLOSED";
 }
 
@@ -165,8 +164,9 @@ type ListSpaceOption = {
   lists: { id: string; name: string; color: string | null }[];
 };
 
-function formatDateRange(start: Date | null, end: Date | null): string {
-  const fmt = (d: Date | null) => (d ? format(new Date(d), "M/d") : "—");
+function formatDateRange(start: string | null, end: string | null): string {
+  const fmt = (d: string | null) =>
+    d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "—";
   return `${fmt(start)} - ${fmt(end)}`;
 }
 

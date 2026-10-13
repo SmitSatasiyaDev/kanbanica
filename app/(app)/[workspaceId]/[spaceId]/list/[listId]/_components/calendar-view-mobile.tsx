@@ -15,11 +15,11 @@ import {
   addMonths,
   format,
   isSameMonth,
-  isToday,
   isWeekend,
   subMonths,
 } from "date-fns";
 import * as React from "react";
+import { useToday } from "@/components/common/timezone-provider";
 import { FacetOptionList } from "@/components/filters/facet-filter";
 import { ExportMenuRow } from "@/components/import-export/export-button";
 import {
@@ -192,9 +192,10 @@ export function MobileCalendar({
       ? `${format(weekDays[0], "MMM d")} – ${format(weekDays[6], "MMM d")}`
       : format(viewDate, "MMMM yyyy");
 
+  const todayKey = useToday();
   const isCurrentPeriod =
     mobileMode === "week"
-      ? weekDays.some((d) => isToday(d))
+      ? weekDays.some((d) => dayKey(d) === todayKey)
       : isSameMonth(viewDate, new Date());
 
   const assigneeOptions = [
@@ -710,7 +711,8 @@ function MonthDayCell({
   statusById: Map<string, Status>;
   onOpen: () => void;
 }) {
-  const today = isToday(day);
+  const todayKey = useToday();
+  const today = dayKey(day) === todayKey;
   const weekend = isWeekend(day);
   const visible = tasks.slice(0, maxPreviews);
   const overflow = tasks.length - visible.length;
@@ -794,7 +796,8 @@ function WeekDayRow({
   statusById: Map<string, Status>;
   onOpen: () => void;
 }) {
-  const today = isToday(day);
+  const todayKey = useToday();
+  const today = dayKey(day) === todayKey;
   const weekend = isWeekend(day);
   const visible = tasks.slice(0, maxPreviews);
   const overflow = tasks.length - visible.length;

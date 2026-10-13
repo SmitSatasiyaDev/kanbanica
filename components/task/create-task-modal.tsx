@@ -20,6 +20,7 @@ import {
   updateTask,
 } from "@/app/actions/task";
 import { createTag, getWorkspaceTags } from "@/app/actions/task-tag";
+import { useToday } from "@/components/common/timezone-provider";
 import { UserAvatar } from "@/components/common/user-avatar";
 import { ManageStatusesDialog } from "@/components/list/manage-statuses-dialog";
 import { MemberSearchInput } from "@/components/task/member-search-input";
@@ -45,6 +46,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useNoteImageUpload } from "@/hooks/use-note-image-upload";
+import { dateStrToLocalDate, dateToDay } from "@/lib/due-date";
 import { filterMembersByQuery } from "@/lib/member-search";
 import { tiptapHasContent } from "@/lib/notes";
 import { cn } from "@/lib/utils";
@@ -104,6 +106,7 @@ export function CreateTaskModal({
 }: CreateTaskModalProps) {
   const [localStatuses, setLocalStatuses] = React.useState(initialStatuses);
   const [manageStatusesOpen, setManageStatusesOpen] = React.useState(false);
+  const today = useToday();
   const [title, setTitle] = React.useState("");
   const [descriptionJson, setDescriptionJson] = React.useState("");
   const descImages = useNoteImageUpload({
@@ -220,7 +223,7 @@ export function CreateTaskModal({
       statusId,
       priority,
       description: hasImages ? undefined : doc,
-      dueDateEnd: dueDate,
+      dueDateEnd: dueDate ? dateToDay(dueDate) : null,
       assigneeIds,
       tagIds,
     });
@@ -576,7 +579,9 @@ export function CreateTaskModal({
                     // When opened from a Calendar day, allow any date (incl. past);
                     // otherwise keep the default "no past dates" restriction.
                     disabled={
-                      defaultDueDate ? undefined : { before: new Date() }
+                      defaultDueDate
+                        ? undefined
+                        : { before: dateStrToLocalDate(today) }
                     }
                     mode="single"
                     onSelect={(date) => {

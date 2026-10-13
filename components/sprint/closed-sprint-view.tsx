@@ -9,7 +9,6 @@ import {
   LockIcon,
   UserIcon,
 } from "@phosphor-icons/react";
-import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import {
@@ -18,6 +17,7 @@ import {
 } from "@/app/actions/sprint";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
+import { formatDay } from "@/lib/due-date";
 import { avatarSrc } from "@/lib/priority-config";
 import { cn } from "@/lib/utils";
 
@@ -31,11 +31,8 @@ interface ClosedSprintViewProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(date: Date | null): string {
-  if (!date) {
-    return "—";
-  }
-  return format(new Date(date), "MMM d, yyyy");
+function formatDate(date: string | null): string {
+  return date ? formatDay(date, true) : "—";
 }
 
 const PRIORITY_CONFIG: Record<
@@ -185,7 +182,7 @@ function TaskRow({
       <td className="py-2.5 px-3 w-28">
         {(task.dueDateEnd ?? task.dueDateStart) ? (
           <span className="text-xs text-base-content/60">
-            {format(new Date((task.dueDateEnd ?? task.dueDateStart)!), "MMM d")}
+            {formatDay((task.dueDateEnd ?? task.dueDateStart)!)}
           </span>
         ) : (
           <CalendarBlankIcon className="size-4 text-base-content/30" />

@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { and, eq, inArray } from "drizzle-orm";
 import { listStatus, sprint, task, taskSprint } from "@/db/schema";
 import { db } from "@/lib/db";
+import { addDays as addDay, todayInTz } from "@/lib/due-date";
 import { notDeleted } from "@/lib/task-visibility";
 
 // Shared sprint close + rollover logic, driven by space-level settings.
@@ -123,8 +124,12 @@ export async function closeSprintAndRollover(params: {
     if (existingPlanned) {
       nextSprintId = existingPlanned.id;
     } else {
-      const newStartDate = current.endDate ? addDays(current.endDate, 1) : now;
-      const newEndDate = addDays(newStartDate, current.durationWeeks * 7);
+      // Sprint dates are calendar days; with no end date to continue from,
+      // start the next sprint today (UTC — this also runs in the worker).
+      const newStartDate = current.endDate
+        ? addDay(current.endDate, 1)
+        : todayInTz("UTC", now);
+      const newEndDate = addDay(newStartDate, current.durationWeeks * 7);
       const newId = createId();
 
       await db.insert(sprint).values({

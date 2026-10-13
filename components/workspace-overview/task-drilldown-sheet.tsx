@@ -14,6 +14,7 @@ import {
   type MyFocusKind,
   type WorkspaceOverviewTaskRef,
 } from "@/app/actions/workspace-overview";
+import { useToday } from "@/components/common/timezone-provider";
 import {
   Sheet,
   SheetContent,
@@ -64,9 +65,8 @@ function DrilldownRow({
   task: WorkspaceOverviewTaskRef;
 }) {
   const cfg = PRIORITY_CONFIG[task.priority];
-  const deadline = task.dueDate
-    ? describeDeadline(new Date(task.dueDate))
-    : null;
+  const today = useToday();
+  const deadline = task.dueDate ? describeDeadline(task.dueDate, today) : null;
   return (
     <Link
       className="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm hover:bg-base-200/30 transition-colors"

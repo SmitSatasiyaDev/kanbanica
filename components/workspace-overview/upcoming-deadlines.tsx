@@ -7,6 +7,7 @@ import type {
   WorkspaceOverviewData,
   WorkspaceOverviewTaskRef,
 } from "@/app/actions/workspace-overview";
+import { useToday } from "@/components/common/timezone-provider";
 import {
   Card,
   CardAction,
@@ -85,9 +86,8 @@ function DeadlineRow({
   bucketKey: BucketKey;
   dotClass: string;
 }) {
-  const deadline = task.dueDate
-    ? describeDeadline(new Date(task.dueDate))
-    : null;
+  const today = useToday();
+  const deadline = task.dueDate ? describeDeadline(task.dueDate, today) : null;
   return (
     <Link
       className="flex items-start gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-base-200/30 transition-colors"

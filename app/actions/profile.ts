@@ -7,6 +7,7 @@ import { session as sessionTable, user } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { requireSession } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { isValidTimeZone } from "@/lib/due-date";
 import { purgeUser, soleOwnedWorkspaces } from "@/lib/user-deletion";
 
 export interface ActionState {
@@ -59,6 +60,26 @@ export async function updateAppearanceMode(
   await db
     .update(user)
     .set({ appearanceMode, updatedAt: new Date() })
+    .where(eq(user.id, session.user.id));
+
+  return { ok: true };
+}
+
+// The timezone decides what "today" means for this user's due-date logic
+// (overdue / due today). Personal, so no workspace-role check and no
+// `refreshWorkspace` — the caller refreshes its own view.
+export async function updateTimezone(
+  timezone: string
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireSession();
+
+  if (!isValidTimeZone(timezone)) {
+    return { error: "Unknown timezone." };
+  }
+
+  await db
+    .update(user)
+    .set({ timezone, updatedAt: new Date() })
     .where(eq(user.id, session.user.id));
 
   return { ok: true };

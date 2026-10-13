@@ -253,6 +253,27 @@
       "when": 1791536276437,
       "tag": "0035_password_signup_toggle",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791794265521,
+      "tag": "0036_user_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791794844661,
+      "tag": "0037_task_due_dates_to_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791795139270,
+      "tag": "0038_sprint_dates_to_date",
+      "breakpoints": true
     }
   ]
 }

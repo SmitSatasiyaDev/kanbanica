@@ -44,6 +44,7 @@ import {
 } from "@/app/actions/task";
 import { addAssignee, removeAssignee } from "@/app/actions/task-assignee";
 import { SpaceIcon } from "@/components/common/space-icon";
+import { useToday } from "@/components/common/timezone-provider";
 import {
   CustomFieldEditor,
   type CustomFieldMember,
@@ -75,6 +76,7 @@ import {
   CUSTOM_FIELD_COLUMN_WIDTH_CLASS,
   describeCustomFieldValue,
 } from "@/lib/custom-fields/column-display";
+import { dateStrToLocalDate, dateToDay } from "@/lib/due-date";
 import {
   flashDuplicatedTask,
   useIsDuplicateHighlighted,
@@ -94,8 +96,8 @@ export interface TaskListRowData {
   assignees: { userId: string; name: string; image: string | null }[];
   customFieldValues?: Record<string, unknown>;
   dependencyInfo?: TaskDependencyIndicator;
-  dueDateEnd?: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd?: string | null;
+  dueDateStart: string | null;
   id: string;
   isPinnedToList?: boolean;
   listId?: string | null;
@@ -205,7 +207,7 @@ export function TaskListRow({
   // editor writes. It used to fall back to `dueDateStart` when the end was
   // empty, which made clearing a due date look like a no-op on any task that
   // also had a start date (the start would immediately take its place).
-  const [localDueDate, setLocalDueDate] = React.useState<Date | null>(
+  const [localDueDate, setLocalDueDate] = React.useState<string | null>(
     task.dueDateEnd ?? null
   );
   const [localPersonalPin, setLocalPersonalPin] = React.useState(
@@ -338,7 +340,8 @@ export function TaskListRow({
   const priority =
     PRIORITY_CONFIG[localPriority as keyof typeof PRIORITY_CONFIG] ??
     PRIORITY_CONFIG.NONE;
-  const dueDate = formatDueDate(localDueDate);
+  const today = useToday();
+  const dueDate = formatDueDate(localDueDate, today);
 
   // ── Popover open state ────────────────────────────────────────────────────
   const [assigneeOpen, setAssigneeOpen] = React.useState(false);
@@ -436,7 +439,8 @@ export function TaskListRow({
 
   async function handleSetDueDate(date: Date | null) {
     const prev = localDueDate;
-    setLocalDueDate(date);
+    const day = date ? dateToDay(date) : null;
+    setLocalDueDate(day);
     setDateOpen(false);
     // "Due Date" is the deadline — it maps to `dueDateEnd` and NOTHING else.
     // It deliberately never touches `dueDateStart`: a single-field "Set date"
@@ -448,7 +452,7 @@ export function TaskListRow({
       spaceId,
       effectiveListId,
       task.id,
-      { dueDateEnd: date }
+      { dueDateEnd: day }
     );
     if ("error" in res) {
       setLocalDueDate(prev);
@@ -821,7 +825,7 @@ export function TaskListRow({
             <Calendar
               disabled={
                 task.dueDateStart
-                  ? { before: new Date(task.dueDateStart) }
+                  ? { before: dateStrToLocalDate(task.dueDateStart) }
                   : undefined
               }
               mode="single"
@@ -829,7 +833,9 @@ export function TaskListRow({
                 void handleSetDueDate(date ?? null);
                 setDateOpen(false);
               }}
-              selected={localDueDate ?? undefined}
+              selected={
+                localDueDate ? dateStrToLocalDate(localDueDate) : undefined
+              }
             />
             {localDueDate && (
               <div className="border-t p-2">
@@ -1737,12 +1743,14 @@ export function TaskListRow({
                 <Calendar
                   disabled={
                     task.dueDateStart
-                      ? { before: new Date(task.dueDateStart) }
+                      ? { before: dateStrToLocalDate(task.dueDateStart) }
                       : undefined
                   }
                   mode="single"
                   onSelect={(date) => void handleSetDueDate(date ?? null)}
-                  selected={localDueDate ?? undefined}
+                  selected={
+                    localDueDate ? dateStrToLocalDate(localDueDate) : undefined
+                  }
                 />
                 {localDueDate && (
                   <div className="border-t p-2">

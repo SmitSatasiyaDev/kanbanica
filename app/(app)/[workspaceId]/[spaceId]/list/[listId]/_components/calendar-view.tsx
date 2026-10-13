@@ -23,18 +23,13 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import {
-  addDays,
   addMonths,
-  differenceInCalendarDays,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
   format,
-  isSameDay,
   isSameMonth,
-  isToday,
   isWeekend,
-  startOfDay,
   startOfMonth,
   startOfWeek,
   subMonths,
@@ -43,6 +38,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 import { archiveTask, unarchiveTask, updateTask } from "@/app/actions/task";
+import { useToday } from "@/components/common/timezone-provider";
 import { UserAvatar } from "@/components/common/user-avatar";
 import { FacetFilter } from "@/components/filters/facet-filter";
 import { triggerExportDownload } from "@/components/import-export/export-button";
@@ -81,6 +77,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCreateTaskShortcut } from "@/hooks/use-create-task-shortcut";
+import { addDays, dateStrToLocalDate, daysBetween } from "@/lib/due-date";
 import { PRIORITY_OPTIONS } from "@/lib/filters/options";
 import { filterTasks } from "@/lib/filters/task-filter";
 import { PRIORITY_CONFIG, type Priority } from "@/lib/priority-config";
@@ -110,8 +107,8 @@ export type CalendarTask = {
   priority: Priority;
   statusId: string | null;
   seqNumber: number;
-  dueDateStart: Date | null;
-  dueDateEnd: Date | null;
+  dueDateStart: string | null;
+  dueDateEnd: string | null;
   assignees: { userId: string; name: string; image: string | null }[];
 };
 
@@ -127,23 +124,19 @@ const MAX_CHIPS_PER_DAY = 4;
 export function dayKey(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
-function parseDayKey(key: string): Date {
-  return new Date(`${key}T00:00:00`);
-}
 
 // The task's anchor day on the grid: its deadline (dueDateEnd) or, failing that,
 // its start date. Tasks with neither are unscheduled and not shown.
 export function primaryDay(t: CalendarTask): Date | null {
   const d = t.dueDateEnd ?? t.dueDateStart;
-  return d ? startOfDay(new Date(d)) : null;
+  // Due dates are `YYYY-MM-DD` days: build the grid cell's local-midnight Date
+  // from the string, never `new Date("YYYY-MM-DD")` (that is UTC midnight and
+  // lands on the previous day west of UTC).
+  return d ? dateStrToLocalDate(d) : null;
 }
 
 function isRange(t: CalendarTask): boolean {
-  return (
-    !!t.dueDateStart &&
-    !!t.dueDateEnd &&
-    !isSameDay(new Date(t.dueDateStart), new Date(t.dueDateEnd))
-  );
+  return !!t.dueDateStart && !!t.dueDateEnd && t.dueDateStart !== t.dueDateEnd;
 }
 
 export function CalendarView({
@@ -248,8 +241,8 @@ export function CalendarView({
   useCreateTaskShortcut(() => setCreateDay(new Date()), canEdit);
   const [pendingReschedule, setPendingReschedule] = React.useState<{
     taskId: string;
-    newStart: Date | null;
-    newEnd: Date | null;
+    newStart: string | null;
+    newEnd: string | null;
   } | null>(null);
 
   const statusById = React.useMemo(
@@ -370,24 +363,21 @@ export function CalendarView({
 
   // Compute new dates for a drop, preserving span for real ranges.
   function computeDrop(t: CalendarTask, fromKey: string, toKey: string) {
-    const delta = differenceInCalendarDays(
-      parseDayKey(toKey),
-      parseDayKey(fromKey)
-    );
+    // Day keys are `YYYY-MM-DD`, the same format as the stored due days.
+    const delta = daysBetween(fromKey, toKey);
     if (isRange(t)) {
       return {
-        newStart: addDays(new Date(t.dueDateStart as Date), delta),
-        newEnd: addDays(new Date(t.dueDateEnd as Date), delta),
+        newStart: addDays(t.dueDateStart as string, delta),
+        newEnd: addDays(t.dueDateEnd as string, delta),
       };
     }
-    const target = parseDayKey(toKey);
-    return { newStart: target, newEnd: target };
+    return { newStart: toKey, newEnd: toKey };
   }
 
   async function applyReschedule(
     taskId: string,
-    newStart: Date | null,
-    newEnd: Date | null
+    newStart: string | null,
+    newEnd: string | null
   ) {
     setLocalTasks((prev) =>
       prev.map((t) =>
@@ -878,7 +868,8 @@ function DayCell({
 }) {
   const key = dayKey(day);
   const { setNodeRef, isOver } = useDroppable({ id: key });
-  const today = isToday(day);
+  const todayKey = useToday();
+  const today = key === todayKey;
   const weekend = isWeekend(day);
   const visible = tasks.slice(0, MAX_CHIPS_PER_DAY);
   const overflow = tasks.length - visible.length;
@@ -1007,7 +998,8 @@ function ChipVisual({
   const status = statusById.get(task.statusId ?? "");
   const done = status?.type === "CLOSED";
   const anchor = primaryDay(task);
-  const overdue = !done && anchor !== null && anchor < startOfDay(new Date());
+  const todayKey = useToday();
+  const overdue = !done && anchor !== null && dayKey(anchor) < todayKey;
   const priorityCfg = PRIORITY_CONFIG[task.priority];
   const assignee = task.assignees[0];
 

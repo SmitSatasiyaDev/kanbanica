@@ -1,14 +1,7 @@
 "use server";
 
 import { createId } from "@paralleldrive/cuid2";
-import {
-  addDays,
-  differenceInCalendarDays,
-  format,
-  isSameDay,
-  startOfDay,
-  subDays,
-} from "date-fns";
+import { subDays } from "date-fns";
 import { and, asc, desc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { headers } from "next/headers";
@@ -28,10 +21,12 @@ import {
 import { auth } from "@/lib/auth";
 import type { DashboardCategory } from "@/lib/dashboard-category";
 import { db } from "@/lib/db";
+import { addDays, daysBetween, todayInTz } from "@/lib/due-date";
 import { getAccessibleSpaceIds } from "@/lib/permissions";
 import type { Priority } from "@/lib/priority-config";
 import { workspaceOverviewCacheTag } from "@/lib/realtime/cache-tags";
 import { notDeleted } from "@/lib/task-visibility";
+import { getUserTimezone } from "@/lib/user-timezone";
 
 // Analytics-only classification, independent of `listStatus.type` (which
 // drives Board/List column grouping) and independent of status *name* — set
@@ -44,7 +39,7 @@ export type { DashboardCategory } from "@/lib/dashboard-category";
 export type MyFocusKind = "overdue" | "dueToday" | "review" | "assigned";
 
 export interface WorkspaceOverviewTaskRef {
-  dueDate: Date | null;
+  dueDate: string | null;
   id: string;
   listId: string;
   listName: string;
@@ -61,8 +56,8 @@ export interface WorkspaceOverviewData {
     name: string;
     spaceId: string;
     spaceName: string;
-    startDate: Date | null;
-    endDate: Date | null;
+    startDate: string | null;
+    endDate: string | null;
     totalTasks: number;
     completedTasks: number;
     completionPercent: number;
@@ -172,7 +167,8 @@ function sortByUrgency(
   a: WorkspaceOverviewTaskRef,
   b: WorkspaceOverviewTaskRef
 ): number {
-  const dueDiff = (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0);
+  // Due days are `YYYY-MM-DD`, so a string compare is chronological.
+  const dueDiff = (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
   if (dueDiff !== 0) {
     return dueDiff;
   }
@@ -252,7 +248,9 @@ async function buildWorkspaceOverview(
     return emptyOverview();
   }
 
-  const today = startOfDay(new Date());
+  // "Today" is the viewer's calendar day (their timezone), as `YYYY-MM-DD`.
+  const timezone = await getUserTimezone(userId);
+  const today = todayInTz(timezone);
   const tomorrow = addDays(today, 1);
   const next7End = addDays(today, 7);
 
@@ -313,8 +311,8 @@ async function buildWorkspaceOverview(
 
   const spaceNameById = new Map(spaceRows.map((s) => [s.id, s.name]));
   const effectiveDue = (r: {
-    dueDateStart: Date | null;
-    dueDateEnd: Date | null;
+    dueDateStart: string | null;
+    dueDateEnd: string | null;
   }) => r.dueDateEnd ?? r.dueDateStart;
 
   const toRef = (r: (typeof taskRows)[number]): WorkspaceOverviewTaskRef => ({
@@ -369,9 +367,9 @@ async function buildWorkspaceOverview(
     }
     if (due < today) {
       overdueRefs.push(toRef(r));
-    } else if (isSameDay(due, today)) {
+    } else if (due === today) {
       dueTodayRefs.push(toRef(r));
-    } else if (isSameDay(due, tomorrow)) {
+    } else if (due === tomorrow) {
       dueTomorrowRefs.push(toRef(r));
     } else if (due > tomorrow && due <= next7End) {
       next7Refs.push(toRef(r));
@@ -542,7 +540,7 @@ async function buildWorkspaceOverview(
     }
     if (due < today) {
       myFocus.overdueCount++;
-    } else if (isSameDay(due, today)) {
+    } else if (due === today) {
       myFocus.dueTodayCount++;
     }
   }
@@ -577,7 +575,10 @@ async function buildWorkspaceOverview(
       if (due && due < today) {
         agg.overdueCount++;
       }
-      agg.openAgeDaysSum += differenceInCalendarDays(today, t.createdAt);
+      agg.openAgeDaysSum += daysBetween(
+        todayInTz(timezone, t.createdAt),
+        today
+      );
       agg.openCount++;
     }
     workloadAgg.set(a.userId, agg);
@@ -670,7 +671,7 @@ async function buildWorkspaceOverview(
           ? Math.round((agg.completed / agg.total) * 100)
           : 0,
         daysRemaining: s.endDate
-          ? Math.max(0, differenceInCalendarDays(s.endDate, today))
+          ? Math.max(0, daysBetween(today, s.endDate))
           : null,
       };
     });
@@ -746,8 +747,8 @@ async function buildWorkspaceOverview(
 
   // ─── Overdue trend vs yesterday (needs a persisted snapshot — "overdue" is a
   // derived state, not a logged event, so there's nothing else to diff against) ───
-  const todayStr = format(today, "yyyy-MM-dd");
-  const yesterdayStr = format(subDays(today, 1), "yyyy-MM-dd");
+  const todayStr = today;
+  const yesterdayStr = addDays(today, -1);
   const [yesterdaySnapshot] = await db
     .select({ overdueTasks: workspaceOverviewSnapshot.overdueTasks })
     .from(workspaceOverviewSnapshot)
@@ -990,7 +991,7 @@ export async function getWorkspaceTasksByDeadline(
     return { tasks: [] };
   }
 
-  const today = startOfDay(new Date());
+  const today = todayInTz(await getUserTimezone(session.user.id));
   const tomorrow = addDays(today, 1);
   const next7End = addDays(today, 7);
 
@@ -1023,8 +1024,8 @@ export async function getWorkspaceTasksByDeadline(
     );
 
   const effectiveDue = (r: {
-    dueDateStart: Date | null;
-    dueDateEnd: Date | null;
+    dueDateStart: string | null;
+    dueDateEnd: string | null;
   }) => r.dueDateEnd ?? r.dueDateStart;
   const toRef = (r: (typeof rows)[number]): WorkspaceOverviewTaskRef => ({
     id: r.id,
@@ -1046,8 +1047,8 @@ export async function getWorkspaceTasksByDeadline(
     }
 
     const isOverdue = due < today;
-    const isToday = isSameDay(due, today);
-    const isTomorrow = isSameDay(due, tomorrow);
+    const isToday = due === today;
+    const isTomorrow = due === tomorrow;
     const isNext7 = due > tomorrow && due <= next7End;
 
     const matches =
@@ -1161,7 +1162,7 @@ export async function getWorkspaceMyFocusTasks(
     return { tasks: [] };
   }
 
-  const today = startOfDay(new Date());
+  const today = todayInTz(await getUserTimezone(session.user.id));
 
   const rows = await db
     .select({
@@ -1194,8 +1195,8 @@ export async function getWorkspaceMyFocusTasks(
     );
 
   const effectiveDue = (r: {
-    dueDateStart: Date | null;
-    dueDateEnd: Date | null;
+    dueDateStart: string | null;
+    dueDateEnd: string | null;
   }) => r.dueDateEnd ?? r.dueDateStart;
   const toRef = (r: (typeof rows)[number]): WorkspaceOverviewTaskRef => ({
     id: r.id,
@@ -1229,7 +1230,7 @@ export async function getWorkspaceMyFocusTasks(
     if (!due) {
       continue;
     }
-    const matches = kind === "overdue" ? due < today : isSameDay(due, today);
+    const matches = kind === "overdue" ? due < today : due === today;
     if (matches) {
       tasks.push(toRef(r));
     }

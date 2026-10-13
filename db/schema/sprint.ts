@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, integer, boolean, index, unique } from "drizzle-orm/pg-core";
+import { date, pgEnum, pgTable, text, timestamp, integer, boolean, index, unique } from "drizzle-orm/pg-core";
 import { space } from "./space";
 import { task } from "./task";
 
@@ -15,8 +15,9 @@ export const sprint = pgTable(
     name: text("name").notNull(),
     goal: text("goal"),
     status: sprintStatusEnum("status").notNull().default("PLANNED"),
-    startDate: timestamp("start_date", { withTimezone: true }),
-    endDate: timestamp("end_date", { withTimezone: true }),
+    // Calendar days (`YYYY-MM-DD`), like task due dates — see docs/due-dates.md.
+    startDate: date("start_date", { mode: "string" }),
+    endDate: date("end_date", { mode: "string" }),
     durationWeeks: integer("duration_weeks").notNull().default(2),
     autoCreateNext: boolean("auto_create_next").notNull().default(false),
     autoCloseOnNext: boolean("auto_close_on_next").notNull().default(false),

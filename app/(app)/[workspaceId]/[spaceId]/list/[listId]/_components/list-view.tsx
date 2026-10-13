@@ -210,8 +210,8 @@ interface Task {
   assignees: { userId: string; name: string; image: string | null }[];
   customFieldValues?: Record<string, unknown>;
   dependencyInfo?: TaskDependencyIndicator;
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   isPinnedToList: boolean;
   orderIndex: number;
@@ -2150,8 +2150,8 @@ export function ListView({
           // Undated tasks always sink to the bottom in BOTH directions —
           // reversing them into first place makes "sort by due date descending"
           // look like it hid every dated task behind a wall of blanks.
-          const tA = a.dueDateEnd ? new Date(a.dueDateEnd).getTime() : null;
-          const tB = b.dueDateEnd ? new Date(b.dueDateEnd).getTime() : null;
+          const tA = a.dueDateEnd;
+          const tB = b.dueDateEnd;
           if (tA === null || tB === null) {
             if (tA === tB) {
               return 0;
@@ -2160,7 +2160,8 @@ export function ListView({
             const undatedLast = tA === null ? 1 : -1;
             return sortOrder === "asc" ? undatedLast : -undatedLast;
           }
-          cmp = tA - tB;
+          // `YYYY-MM-DD` strings sort chronologically.
+          cmp = tA < tB ? -1 : tA > tB ? 1 : 0;
         } else if (sortBy === "priority") {
           const weight = { NONE: 0, LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
           cmp = weight[a.priority] - weight[b.priority];

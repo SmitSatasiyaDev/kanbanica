@@ -1,4 +1,4 @@
-import { format, isPast, isToday } from "date-fns";
+import { formatDay, toDay } from "@/lib/due-date";
 
 export const PRIORITY_CONFIG = {
   NONE: { label: "No Priority", color: "text-gray-400", icon: "😴" },
@@ -30,13 +30,17 @@ export function avatarSrc(key: string | null | undefined): string | undefined {
   return key ? `/api/files/${key}` : undefined;
 }
 
+/** `day` is a stored `YYYY-MM-DD` due day; `today` comes from `useToday()` / `getUserToday()`. */
 export function formatDueDate(
-  date: Date | null
+  day: string | null,
+  today: string
 ): { label: string; overdue: boolean } | null {
-  if (!date) {
+  const due = toDay(day);
+  if (!due) {
     return null;
   }
-  const d = new Date(date);
-  const overdue = isPast(d) && !isToday(d);
-  return { label: isToday(d) ? "Today" : format(d, "MMM d"), overdue };
+  return {
+    label: due === today ? "Today" : formatDay(due),
+    overdue: due < today,
+  };
 }

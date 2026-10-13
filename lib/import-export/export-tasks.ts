@@ -46,6 +46,12 @@ export interface ExportResult {
   rows: Record<string, string>[];
 }
 
+// Due dates are stored as `YYYY-MM-DD` days and exported as-is, so a
+// round-trip through import is lossless regardless of timezone.
+function formatDay(d: string | null): string {
+  return d ?? "";
+}
+
 function formatDate(d: Date | null): string {
   return d ? d.toISOString() : "";
 }
@@ -234,8 +240,8 @@ export async function getExportableTasks(
       Status: t.statusName ?? "",
       Priority: t.priority,
       Assignees: (assigneesByTask.get(t.id) ?? []).join("; "),
-      "Start Date": formatDate(t.dueDateStart),
-      "Due Date": formatDate(t.dueDateEnd),
+      "Start Date": formatDay(t.dueDateStart),
+      "Due Date": formatDay(t.dueDateEnd),
       Tags: (tagsByTask.get(t.id) ?? []).join("; "),
       Project: spaceName,
       List: t.listName ?? "",

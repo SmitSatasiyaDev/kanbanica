@@ -2,6 +2,7 @@ import { and, eq, lt } from "drizzle-orm";
 import type { Job } from "pg-boss";
 import { space, sprint } from "@/db/schema";
 import { db } from "@/lib/db";
+import { todayInTz } from "@/lib/due-date";
 import { closeSprintAndRollover } from "@/lib/sprint/rollover";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -9,8 +10,10 @@ import { closeSprintAndRollover } from "@/lib/sprint/rollover";
 export async function handleSprintAutoClose(
   _jobs: Job<Record<string, never>>[]
 ) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Sprint end dates are calendar days, and a project's members span many
+  // timezones. A calendar day ends last in UTC-12, so compare against the day
+  // there: a sprint auto-closes only once its end day is over for everyone.
+  const today = todayInTz("Etc/GMT+12");
 
   // ACTIVE sprints past their end date, in spaces that have "Auto-mark sprint as
   // done" enabled. The space-level settings are the single source of truth (the
