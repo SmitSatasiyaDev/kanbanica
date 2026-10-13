@@ -37,6 +37,23 @@ TSX_BIN="node_modules/.bin/tsx"
 
 role="${KANBANICA_ROLE:-all}"
 
+# Local-disk uploads only survive a redeploy if /app/uploads is a mounted
+# volume. Platforms that run the image once (Dokploy, Coolify, ...) don't add
+# one, so uploads then "work" until the next deploy and 404 afterwards. Warn
+# loudly. Skipped when .env selects S3/R2; the driver can also be set in-app
+# (Settings → Integrations), hence the wording. Never fatal.
+case "${STORAGE_DRIVER:-local}" in
+  s3 | r2) ;;
+  *)
+    if [ -d /app/uploads ] && ! grep -q " /app/uploads " /proc/self/mountinfo 2>/dev/null; then
+      echo "[entrypoint] WARNING: /app/uploads is not a mounted volume. With local file storage," >&2
+      echo "[entrypoint] uploaded files (images, attachments, avatars) will be LOST on redeploy." >&2
+      echo "[entrypoint] Mount a persistent volume at /app/uploads, or use S3/R2 (Settings → Integrations)." >&2
+      echo "[entrypoint] See DEPLOYMENT.md → Persistent storage." >&2
+    fi
+    ;;
+esac
+
 # Pass-through. Every docker-compose service lands here, as does `docker run
 # <image> bash`. "kanbanica" is the image's own CMD: a sentinel meaning "no
 # command given, decide from the environment". It has to be a real value rather

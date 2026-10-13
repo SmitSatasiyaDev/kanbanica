@@ -1,6 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
+import * as React from "react";
 import type { ChecklistEntry } from "@/app/actions/daily-checklist";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,15 +36,25 @@ interface TaskDetailSheetProps {
 }
 
 export function TaskDetailSheet({
-  entry,
+  entry: entryProp,
   onClose,
   onStatus,
   onEdit,
   readOnly,
   futureLocked = false,
 }: TaskDetailSheetProps) {
+  // The parent nulls `entry` the moment it closes, but the sheet keeps sliding
+  // out for a moment. Keep rendering the last entry through that exit so the
+  // panel doesn't flash empty (and the stale entry is never actionable: the
+  // sheet is closed).
+  const lastEntry = React.useRef<ChecklistEntry | null>(null);
+  if (entryProp) {
+    lastEntry.current = entryProp;
+  }
+  const entry = entryProp ?? lastEntry.current;
+
   return (
-    <Sheet onOpenChange={(o) => !o && onClose()} open={entry !== null}>
+    <Sheet onOpenChange={(o) => !o && onClose()} open={entryProp !== null}>
       <SheetContent
         className="flex w-full flex-col p-0 sm:max-w-md"
         side="right"

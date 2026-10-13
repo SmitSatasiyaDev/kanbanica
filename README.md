@@ -189,7 +189,9 @@ For production we still recommend splitting it into three services from that one
 
 Because all three share one image and one tag, an app and a worker can never drift onto different schema versions.
 
-On the default `STORAGE_DRIVER=local`, mount a persistent volume at `/app/uploads` — S3/R2 need none. If your platform generates its own Compose file rather than using `docker-compose.yml` directly, double-check it keeps volume names stable across redeploys — some tools (observed with Dokploy) don't, which silently creates a new empty volume and orphans the old one instead of erroring. See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full reasoning and compose-file examples.
+> **⚠️ Persistent storage is required when you deploy the image on its own** (Dokploy, Coolify, `docker run`, …). The image does not create a volume: with the default local storage, uploaded files (task images, attachments, avatars) are lost on every redeploy unless you **mount a persistent volume at `/app/uploads`** — in Dokploy: *Advanced → Volumes → Add → Volume → mount path `/app/uploads`* — or use S3/R2 instead (no volume needed). The container logs a warning at boot if it isn't mounted. Step-by-step: [DEPLOYMENT.md → Persistent storage](./DEPLOYMENT.md#persistent-storage-uploads).
+
+If your platform generates its own Compose file rather than using `docker-compose.yml` directly, also check it keeps volume names stable across redeploys — some tools (observed with Dokploy) don't, which silently creates a new empty volume and orphans the old one. See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full reasoning and compose-file examples.
 
 Point your platform at the published image directly rather than building from source:
 

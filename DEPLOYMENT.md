@@ -474,7 +474,7 @@ What it is *not* is the whole dev environment. Runtime `node_modules` is a `--pr
 
 #### Option A — one container (simplest)
 
-Point the platform at the image, set the env vars, and **leave the command blank**. With no command, the image's entrypoint applies pending migrations and then runs the web server *and* exactly one worker inside that container. Nothing else to configure — this is the path a Dokploy "Docker (registry image)" deployment takes by default.
+Point the platform at the image, set the env vars, **add a persistent volume for uploads** (see [Persistent storage](#persistent-storage-uploads) — required, not optional), and **leave the command blank**. With no command, the image's entrypoint applies pending migrations and then runs the web server *and* exactly one worker inside that container. This is the path a Dokploy "Docker (registry image)" deployment takes by default.
 
 It supervises both processes: if either one dies the container exits, so your platform's restart policy brings the pair back together. That is deliberate — a container still answering `/api/health` with a dead worker would look healthy while every queued email and reminder piled up unsent.
 
@@ -495,7 +495,21 @@ Deploy the published image three times with the commands in the table at the top
 - **Don't skip the worker.** Magic-link emails are enqueued through pg-boss, so with no worker running nobody can sign in by email. (Option A exists precisely because this was easy to miss.)
 - **Still run exactly one worker** — see [Operational notes](#9-operational-notes--limits).
 
-On the default `STORAGE_DRIVER=local`, mount a persistent volume at `/app/uploads` (S3/R2 need none), and check that your platform keeps volume names stable across redeploys — some don't (observed with Dokploy), which silently creates a new empty volume and orphans the old one instead of erroring. That's why the volumes in `docker-compose.yml` are pinned to literal names.
+#### Persistent storage (uploads)
+
+> **Required on any platform that runs the image once.** The image does **not** create a persistent volume. Without a mount at `/app/uploads`, uploaded files (task images, attachments, avatars) are written to the container's own disk: they work right after upload and **disappear on the next redeploy**. (`docker-compose.yml` already mounts one; platforms deploying a bare image do not.) The container logs a `[entrypoint] WARNING: /app/uploads is not a mounted volume` at boot when this is missing.
+
+Pick one:
+
+- **Mount a volume at `/app/uploads`** (default `STORAGE_DRIVER=local`):
+  - **Dokploy** — your app → **Advanced → Volumes / Mounts → Add** → type **Volume**, name `kanbanica-uploads`, mount path `/app/uploads` → save and redeploy.
+  - **Coolify** — resource → **Persistent Storage → Add** → destination path `/app/uploads`.
+  - **docker run** — `-v kanbanica-uploads:/app/uploads`.
+  - Kubernetes / Swarm / ECS — a PersistentVolumeClaim / named volume / EFS mount at `/app/uploads`.
+  - The files must be writable by uid/gid `1001` (the image's user; a fresh named volume inherits this). Back the volume up — it's the only copy.
+- **Use S3 / R2** — set `STORAGE_DRIVER=s3|r2` and credentials (or Settings → Integrations). No volume needed, and files survive losing the server.
+
+If you deploy a Compose stack, check that your platform keeps volume names stable across redeploys — some don't (observed with Dokploy), which silently creates a new empty volume and orphans the old one instead of erroring. That's why the volumes in `docker-compose.yml` are pinned to literal names.
 
 ---
 
@@ -520,7 +534,7 @@ On the default `STORAGE_DRIVER=local`, mount a persistent volume at `/app/upload
 | `/signup` returns 404 | `ALLOW_PASSWORD_SIGNUP` is not `true`. The instance is invite-only by design. |
 | `/api/health` returns 503 | App can't reach Postgres — check `DATABASE_URL` host is `postgres` and the DB is healthy (`docker compose ps`). |
 | Real-time updates lag or don't appear | Reverse proxy is buffering `/api/me/notifications/stream` (see step 6), or you're running multiple app instances (step 9). |
-| Uploaded files disappear after redeploy | Local storage without a persistent volume. The compose file mounts `uploads`; or switch to S3/R2. |
+| Uploaded files disappear after redeploy (new uploads work, old ones 404) | No persistent volume at `/app/uploads` (image-URL deploys on Dokploy/Coolify/etc. get none), or the platform created a new empty one. Add the mount — see [Persistent storage](#persistent-storage-uploads) — or switch to S3/R2. Check the boot log for `[entrypoint] WARNING: /app/uploads is not a mounted volume`. |
 | Migrations didn't run | Check `docker compose logs migrate` — it must exit 0 before app/worker start. |
 
 ---
