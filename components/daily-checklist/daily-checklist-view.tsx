@@ -891,7 +891,7 @@ function EntryRow({
           <DropdownMenuTrigger asChild>
             <button
               aria-label="Task actions"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-base-content/60 transition-colors hover:bg-base-200 hover:text-base-content"
+              className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-base-content/60 transition-colors hover:bg-base-200 hover:text-base-content"
               type="button"
             >
               <DotsThreeIcon className="size-4" weight="bold" />
@@ -899,18 +899,21 @@ function EntryRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
             {!entry.isDeleted && (
-              <DropdownMenuItem onClick={onEdit}>
+              <DropdownMenuItem className="cursor-pointer" onClick={onEdit}>
                 <PencilSimpleIcon className="size-3.5" />
                 Edit task
               </DropdownMenuItem>
             )}
             {skipped ? (
-              <DropdownMenuItem onClick={() => onStatus("INCOMPLETE")}>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => onStatus("INCOMPLETE")}
+              >
                 <ProhibitIcon className="size-3.5" />
                 Restore
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuItem onClick={onSkip}>
+              <DropdownMenuItem className="cursor-pointer" onClick={onSkip}>
                 <ProhibitIcon className="size-3.5" />
                 Skip this day
               </DropdownMenuItem>
@@ -919,12 +922,15 @@ function EntryRow({
               <>
                 <DropdownMenuSeparator />
                 {entry.isRecurring && (
-                  <DropdownMenuItem onClick={onStop}>
+                  <DropdownMenuItem className="cursor-pointer" onClick={onStop}>
                     <StopCircleIcon className="size-3.5" />
                     Stop recurring task
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem className="text-error" onClick={onDelete}>
+                <DropdownMenuItem
+                  className="cursor-pointer text-error"
+                  onClick={onDelete}
+                >
                   <TrashIcon className="size-3.5" />
                   Delete task
                 </DropdownMenuItem>

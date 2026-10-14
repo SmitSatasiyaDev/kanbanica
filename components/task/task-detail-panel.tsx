@@ -108,6 +108,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { InviteMemberModal } from "@/components/workspace/invite-member-modal";
+import { dateStrToLocalDate, dateToDay } from "@/lib/due-date";
 import { flashDuplicatedTask } from "@/lib/duplicate-highlight";
 import { filterMembersByQuery } from "@/lib/member-search";
 import { toastWithUndo } from "@/lib/undo-toast";
@@ -489,14 +490,15 @@ export function TaskDetailPanel({
   ) {
     if (field === "start") {
       // Keep end >= start: if the new start is after the current end, move end too.
+      const day = date ? dateToDay(date) : null;
       const patch =
         date && dueDateEnd && date > dueDateEnd
-          ? { dueDateStart: date, dueDateEnd: date }
-          : { dueDateStart: date };
+          ? { dueDateStart: day, dueDateEnd: day }
+          : { dueDateStart: day };
       await updateTask(workspaceId, spaceId, listId, taskId, patch);
     } else {
       await updateTask(workspaceId, spaceId, listId, taskId, {
-        dueDateEnd: date,
+        dueDateEnd: date ? dateToDay(date) : null,
       });
     }
     load();
@@ -669,8 +671,12 @@ export function TaskDetailPanel({
     }
   }
 
-  const dueDateStart = t.dueDateStart ? new Date(t.dueDateStart) : null;
-  const dueDateEnd = t.dueDateEnd ? new Date(t.dueDateEnd) : null;
+  // Due dates are `YYYY-MM-DD` days; these are their local-midnight Dates
+  // (for the calendar and `format`), never `new Date("YYYY-MM-DD")` (UTC).
+  const dueDateStart = t.dueDateStart
+    ? dateStrToLocalDate(t.dueDateStart)
+    : null;
+  const dueDateEnd = t.dueDateEnd ? dateStrToLocalDate(t.dueDateEnd) : null;
 
   const panelContent = (
     <>

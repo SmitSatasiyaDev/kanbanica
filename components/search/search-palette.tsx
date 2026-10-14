@@ -22,6 +22,7 @@ import {
   type SearchFilterOptions,
 } from "@/app/actions/search";
 import { SpaceIcon } from "@/components/common/space-icon";
+import { useToday } from "@/components/common/timezone-provider";
 import { UserAvatar } from "@/components/common/user-avatar";
 import {
   FacetFilter,
@@ -115,6 +116,7 @@ export function SearchPalette({
   onClose,
 }: SearchPaletteProps) {
   const router = useRouter();
+  const today = useToday();
   const { query, setQuery, debouncedQuery } = useDebouncedSearch(300);
   const [filters, setFilters] = React.useState<GlobalSearchFilters>({});
   const [results, setResults] = React.useState<GlobalSearchResults | null>(
@@ -819,7 +821,7 @@ export function SearchPalette({
                     const isActive =
                       active?.kind === "task" && active.id === t.id;
                     const cfg = PRIORITY_CONFIG[t.priority as Priority];
-                    const due = formatDueDate(t.dueDateEnd);
+                    const due = formatDueDate(t.dueDateEnd, today);
                     return (
                       <button
                         className={cn(

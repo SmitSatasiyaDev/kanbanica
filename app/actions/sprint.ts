@@ -27,6 +27,7 @@ import {
 import { writeActivityLog } from "@/lib/activity-log";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { addDays, isValidDateStr, weekdayOf } from "@/lib/due-date";
 import {
   canAccessSpace,
   getSpacePermission,
@@ -35,6 +36,7 @@ import {
 import { refreshWorkspace } from "@/lib/realtime/refresh";
 import { closeSprintAndRollover } from "@/lib/sprint/rollover";
 import { notDeleted } from "@/lib/task-visibility";
+import { getUserToday } from "@/lib/user-timezone";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,12 +97,6 @@ function revalidateList(workspaceId: string, spaceId: string, listId: string) {
   ]);
 }
 
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
 // ─── getSprints ───────────────────────────────────────────────────────────────
 
 export async function getSprints(
@@ -113,8 +109,8 @@ export async function getSprints(
         name: string;
         goal: string | null;
         status: "PLANNED" | "ACTIVE" | "CLOSED";
-        startDate: Date | null;
-        endDate: Date | null;
+        startDate: string | null;
+        endDate: string | null;
         createdAt: Date;
       }[];
     }
@@ -155,7 +151,8 @@ export async function createSprint(
   data: {
     name: string;
     goal?: string;
-    startDate: Date;
+    /** Calendar day, `YYYY-MM-DD`. */
+    startDate: string;
     durationWeeks: number;
     autoCreateNext?: boolean;
     autoCloseOnNext?: boolean;
@@ -183,7 +180,10 @@ export async function createSprint(
     return { error: "Duration must be at least 1 week" };
   }
 
-  const startDate = new Date(data.startDate);
+  if (!isValidDateStr(data.startDate)) {
+    return { error: "Invalid start date" };
+  }
+  const startDate = data.startDate;
   const endDate = addDays(startDate, data.durationWeeks * 7);
   const sprintId = createId();
   const now = new Date();
@@ -251,9 +251,11 @@ export async function startSprint(
   }
 
   const now = new Date();
+  // Starting a sprint begins it today — in the starter's timezone.
+  const today = await getUserToday(session.user.id);
   await db
     .update(sprint)
-    .set({ status: "ACTIVE", startDate: now, updatedAt: now })
+    .set({ status: "ACTIVE", startDate: today, updatedAt: now })
     .where(eq(sprint.id, sprintId));
 
   revalidateSpace(workspaceId, spaceId);
@@ -312,8 +314,8 @@ export async function getSprintWithTasks(
         name: string;
         goal: string | null;
         status: "PLANNED" | "ACTIVE" | "CLOSED";
-        startDate: Date | null;
-        endDate: Date | null;
+        startDate: string | null;
+        endDate: string | null;
       };
       tasks: {
         id: string;
@@ -898,8 +900,8 @@ export async function getActiveSprintView(
         id: string;
         name: string;
         goal: string | null;
-        startDate: Date | null;
-        endDate: Date | null;
+        startDate: string | null;
+        endDate: string | null;
         status: "PLANNED" | "ACTIVE" | "CLOSED";
       } | null;
       tasks: {
@@ -910,8 +912,8 @@ export async function getActiveSprintView(
         statusId: string | null;
         listId: string | null;
         orderIndex: number;
-        dueDateStart: Date | null;
-        dueDateEnd: Date | null;
+        dueDateStart: string | null;
+        dueDateEnd: string | null;
         statusName: string | null;
         statusColor: string | null;
         statusType: string | null;
@@ -1314,8 +1316,8 @@ export type ClosedSprintTask = {
   statusId: string | null;
   listId: string | null;
   orderIndex: number;
-  dueDateStart: Date | null;
-  dueDateEnd: Date | null;
+  dueDateStart: string | null;
+  dueDateEnd: string | null;
   statusName: string | null;
   statusColor: string | null;
   statusType: string | null;
@@ -1335,8 +1337,8 @@ export async function getClosedSprintView(
         name: string;
         goal: string | null;
         status: "PLANNED" | "ACTIVE" | "CLOSED";
-        startDate: Date | null;
-        endDate: Date | null;
+        startDate: string | null;
+        endDate: string | null;
       };
       tasks: ClosedSprintTask[];
       stats: {
@@ -1485,7 +1487,8 @@ export interface CreateSprintDefaults {
   sprintNumber: number;
   sprintStartDay: number | null;
   suggestedName: string;
-  suggestedStartDate: Date | null;
+  /** Calendar day, `YYYY-MM-DD`. */
+  suggestedStartDate: string | null;
 }
 
 export async function getCreateSprintDefaults(
@@ -1547,21 +1550,17 @@ export async function getCreateSprintDefaults(
   }
 
   // Compute suggested start date: lastSprint.endDate + 1 day, snapped to startDay
-  let suggestedStartDate: Date | null = null;
+  let suggestedStartDate: string | null = null;
   if (lastSprintRow?.endDate) {
-    const afterLast = addDays(new Date(lastSprintRow.endDate), 1);
+    const afterLast = addDays(lastSprintRow.endDate, 1);
     // Snap forward to next occurrence of startDay
-    const dayOfWeek = afterLast.getDay();
-    const daysUntilStart = (startDay - dayOfWeek + 7) % 7;
+    const daysUntilStart = (startDay - weekdayOf(afterLast) + 7) % 7;
     suggestedStartDate = addDays(afterLast, daysUntilStart);
   } else {
-    // No prior sprint: next occurrence of startDay from today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dayOfWeek = today.getDay();
-    const daysUntilStart = (startDay - dayOfWeek + 7) % 7;
-    suggestedStartDate =
-      daysUntilStart === 0 ? today : addDays(today, daysUntilStart);
+    // No prior sprint: next occurrence of startDay from the user's today
+    const today = await getUserToday(session.user.id);
+    const daysUntilStart = (startDay - weekdayOf(today) + 7) % 7;
+    suggestedStartDate = addDays(today, daysUntilStart);
   }
 
   const suggestedName = nameFormat

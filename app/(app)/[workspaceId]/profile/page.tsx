@@ -9,6 +9,7 @@ import {
   type SessionRow,
   SessionsCard,
 } from "@/components/profile/sessions-card";
+import { TimezoneSettingsForm } from "@/components/profile/timezone-settings-form";
 import { PageHeader } from "@/components/scaffold/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -91,6 +92,8 @@ export default async function ProfilePage({
           email={freshUser.email}
           name={freshUser.name}
         />
+
+        <TimezoneSettingsForm timezone={freshUser.timezone} />
 
         <PasswordCard hasPassword={hasPassword} />
 

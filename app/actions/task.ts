@@ -38,6 +38,7 @@ import {
 import { writeActivityLog } from "@/lib/activity-log";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isOptionalDay } from "@/lib/due-date";
 import {
   extractInlineAttachmentIds,
   extractMentionIds,
@@ -146,8 +147,8 @@ export async function createTask(
     statusId?: string;
     priority?: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
     description?: unknown;
-    dueDateStart?: Date | null;
-    dueDateEnd?: Date | null;
+    dueDateStart?: string | null;
+    dueDateEnd?: string | null;
     assigneeIds?: string[];
     tagIds?: string[];
   }
@@ -165,6 +166,9 @@ export async function createTask(
   const title = data.title.trim();
   if (!title) {
     return { error: "Task title is required" };
+  }
+  if (!(isOptionalDay(data.dueDateStart) && isOptionalDay(data.dueDateEnd))) {
+    return { error: "Invalid due date" };
   }
 
   let statusId: string | undefined = data.statusId || undefined;
@@ -638,8 +642,8 @@ export async function updateTask(
     title?: string;
     priority?: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
     description?: unknown;
-    dueDateStart?: Date | null;
-    dueDateEnd?: Date | null;
+    dueDateStart?: string | null;
+    dueDateEnd?: string | null;
     timeEstimate?: number | null;
   }
 ): Promise<{ ok: true } | { error: string }> {
@@ -651,6 +655,10 @@ export async function updateTask(
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
     return err;
+  }
+
+  if (!(isOptionalDay(data.dueDateStart) && isOptionalDay(data.dueDateEnd))) {
+    return { error: "Invalid due date" };
   }
 
   const [existing] = await db
@@ -779,12 +787,11 @@ export async function updateTask(
   await Promise.all(logs.map((fn) => fn()));
 
   // Notify watchers of due date change
-  // Only when the due date actually changed (compare timestamps; null-safe) —
-  // matches the priority guard, so re-saving the same date sends nothing.
+  // Only when the due day actually changed (null-safe) — matches the
+  // priority guard, so re-saving the same date sends nothing.
   const dueDateEndChanged =
     data.dueDateEnd !== undefined &&
-    (data.dueDateEnd?.getTime() ?? null) !==
-      (existing.dueDateEnd?.getTime() ?? null);
+    (data.dueDateEnd ?? null) !== (existing.dueDateEnd ?? null);
   if (dueDateEndChanged) {
     const dueDateWatchers = await db
       .select({ userId: taskWatcher.userId })

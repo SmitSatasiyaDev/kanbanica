@@ -19,12 +19,14 @@ vi.mock("@/lib/worker/enqueue", () => ({ enqueueJob: enqueueJobMock }));
 
 interface QueryChain extends PromiseLike<unknown[]> {
   from: () => QueryChain;
+  innerJoin: () => QueryChain;
   where: () => QueryChain;
 }
 
 function createChain(result: unknown[]): QueryChain {
   const chain: QueryChain = {
     from: () => chain,
+    innerJoin: () => chain,
     where: () => chain,
     // biome-ignore lint/suspicious/noThenProperty: mirrors Drizzle's own thenable query builder
     then: (onfulfilled, onrejected) =>
@@ -83,9 +85,7 @@ describe("handleNotificationDigestScan", () => {
   });
 
   it("queues a digest for a user whose digest time falls within the current scan window", async () => {
-    queueDigestUsers([
-      { userId: "u1", digestTime: "08:00", digestTimezone: "UTC" },
-    ]);
+    queueDigestUsers([{ userId: "u1", digestTime: "08:00", timezone: "UTC" }]);
     await handleNotificationDigestScan([]);
     expect(enqueueJobMock).toHaveBeenCalledWith(
       JOB_NAMES.NOTIFICATION_DIGEST_SEND,
@@ -95,32 +95,26 @@ describe("handleNotificationDigestScan", () => {
   });
 
   it("does not queue when the user's digest time hasn't arrived yet", async () => {
-    queueDigestUsers([
-      { userId: "u1", digestTime: "09:00", digestTimezone: "UTC" },
-    ]);
+    queueDigestUsers([{ userId: "u1", digestTime: "09:00", timezone: "UTC" }]);
     await handleNotificationDigestScan([]);
     expect(enqueueJobMock).not.toHaveBeenCalled();
   });
 
   it("does not queue once the scan window has passed", async () => {
-    queueDigestUsers([
-      { userId: "u1", digestTime: "07:00", digestTimezone: "UTC" },
-    ]);
+    queueDigestUsers([{ userId: "u1", digestTime: "07:00", timezone: "UTC" }]);
     await handleNotificationDigestScan([]);
     expect(enqueueJobMock).not.toHaveBeenCalled();
   });
 
   it("fires at the exact digest-time boundary (delta 0 is inclusive)", async () => {
-    queueDigestUsers([
-      { userId: "u1", digestTime: "08:15", digestTimezone: "UTC" },
-    ]);
+    queueDigestUsers([{ userId: "u1", digestTime: "08:15", timezone: "UTC" }]);
     await handleNotificationDigestScan([]);
     expect(enqueueJobMock).toHaveBeenCalledTimes(1);
   });
 
   it("skips a user with an unparseable digestTime without throwing", async () => {
     queueDigestUsers([
-      { userId: "u1", digestTime: "not-a-time", digestTimezone: "UTC" },
+      { userId: "u1", digestTime: "not-a-time", timezone: "UTC" },
     ]);
     await expect(handleNotificationDigestScan([])).resolves.toBeUndefined();
     expect(enqueueJobMock).not.toHaveBeenCalled();
@@ -128,8 +122,8 @@ describe("handleNotificationDigestScan", () => {
 
   it("queues jobs for multiple eligible users independently", async () => {
     queueDigestUsers([
-      { userId: "u1", digestTime: "08:00", digestTimezone: "UTC" },
-      { userId: "u2", digestTime: "08:10", digestTimezone: "UTC" },
+      { userId: "u1", digestTime: "08:00", timezone: "UTC" },
+      { userId: "u2", digestTime: "08:10", timezone: "UTC" },
     ]);
     await handleNotificationDigestScan([]);
     expect(enqueueJobMock).toHaveBeenCalledTimes(2);
@@ -143,9 +137,7 @@ describe("handleNotificationDigestScan", () => {
 
   it("queues nothing and reads no digest users when the platform notification-email switch is off", async () => {
     emailsEnabledMock.mockResolvedValue(false);
-    queueDigestUsers([
-      { userId: "u1", digestTime: "08:00", digestTimezone: "UTC" },
-    ]);
+    queueDigestUsers([{ userId: "u1", digestTime: "08:00", timezone: "UTC" }]);
     await handleNotificationDigestScan([]);
     expect(selectMock).not.toHaveBeenCalled();
     expect(enqueueJobMock).not.toHaveBeenCalled();

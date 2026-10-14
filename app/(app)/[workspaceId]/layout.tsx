@@ -1,6 +1,7 @@
 import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { TimezoneProvider } from "@/components/common/timezone-provider";
 import { RealtimeProvider } from "@/components/realtime/realtime-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
@@ -69,7 +70,7 @@ export default async function WorkspaceLayout({
     // Appearance mode is personal, not workspace state — sourced from the
     // signed-in user's own row, never from `workspace`.
     db
-      .select({ appearanceMode: user.appearanceMode })
+      .select({ appearanceMode: user.appearanceMode, timezone: user.timezone })
       .from(user)
       .where(eq(user.id, userId))
       .limit(1)
@@ -301,8 +302,8 @@ export default async function WorkspaceLayout({
       id: string;
       name: string;
       status: "PLANNED" | "ACTIVE" | "CLOSED";
-      startDate: Date | null;
-      endDate: Date | null;
+      startDate: string | null;
+      endDate: string | null;
     }[]
   > = {};
   if (spaces.length > 0) {
@@ -346,42 +347,50 @@ export default async function WorkspaceLayout({
       initialTheme={ws.theme}
       workspaceId={workspaceId}
     >
-      <RealtimeProvider workspaceId={workspaceId}>
-        <WorkspaceShell
-          archivedSpaces={archivedSpaces.map((s) => ({
-            ...s,
-            lists: [],
-            archivedLists: [],
-            sprints: [],
-            canManageList: isAdminOrOwner,
-            sprintDateFormat: s.sprintDateFormat ?? "MM/DD",
-          }))}
-          channels={channels}
-          isPlatformAdmin={session.user.role === ADMIN_ROLE}
-          role={membership.role}
-          spaces={spaces.map((s) => ({
-            ...s,
-            lists: spaceListMap[s.id] ?? [],
-            archivedLists: archivedListsBySpace[s.id] ?? [],
-            canManageList: spaceCanManageMap[s.id] ?? isAdminOrOwner,
-            sprints: sprintsBySpace[s.id] ?? [],
-          }))}
-          taskCapacity={{ limit: taskCapacity.limit, used: taskCapacity.used }}
-          user={{
-            name: session.user.name ?? null,
-            email: session.user.email,
-            image: session.user.image ?? null,
-          }}
-          workspace={ws}
-          workspaces={allMemberships.map((m) => ({
-            id: m.workspaceId,
-            name: m.name,
-            logoEmoji: m.logoEmoji,
-          }))}
-        >
-          {children}
-        </WorkspaceShell>
-      </RealtimeProvider>
+      <TimezoneProvider
+        autoDetect={(currentUserRow?.timezone ?? "UTC") === "UTC"}
+        timezone={currentUserRow?.timezone ?? "UTC"}
+      >
+        <RealtimeProvider workspaceId={workspaceId}>
+          <WorkspaceShell
+            archivedSpaces={archivedSpaces.map((s) => ({
+              ...s,
+              lists: [],
+              archivedLists: [],
+              sprints: [],
+              canManageList: isAdminOrOwner,
+              sprintDateFormat: s.sprintDateFormat ?? "MM/DD",
+            }))}
+            channels={channels}
+            isPlatformAdmin={session.user.role === ADMIN_ROLE}
+            role={membership.role}
+            spaces={spaces.map((s) => ({
+              ...s,
+              lists: spaceListMap[s.id] ?? [],
+              archivedLists: archivedListsBySpace[s.id] ?? [],
+              canManageList: spaceCanManageMap[s.id] ?? isAdminOrOwner,
+              sprints: sprintsBySpace[s.id] ?? [],
+            }))}
+            taskCapacity={{
+              limit: taskCapacity.limit,
+              used: taskCapacity.used,
+            }}
+            user={{
+              name: session.user.name ?? null,
+              email: session.user.email,
+              image: session.user.image ?? null,
+            }}
+            workspace={ws}
+            workspaces={allMemberships.map((m) => ({
+              id: m.workspaceId,
+              name: m.name,
+              logoEmoji: m.logoEmoji,
+            }))}
+          >
+            {children}
+          </WorkspaceShell>
+        </RealtimeProvider>
+      </TimezoneProvider>
     </ThemeProvider>
   );
 }

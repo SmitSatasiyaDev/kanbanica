@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Job } from "pg-boss";
-import { userEmailPreference } from "@/db/schema";
+import { user, userEmailPreference } from "@/db/schema";
 import { db } from "@/lib/db";
 import { areNotificationEmailsEnabled } from "@/lib/integration-settings";
 import { enqueueJob } from "@/lib/worker/enqueue";
@@ -62,10 +62,16 @@ export async function handleNotificationDigestScan(
 
   const now = new Date();
 
-  // Get all users with digest delivery mode
+  // Get all users with digest delivery mode, with their account timezone
+  // (Profile → Timezone; `user_email_preference.digest_timezone` is deprecated).
   const digestUsers = await db
-    .select()
+    .select({
+      userId: userEmailPreference.userId,
+      digestTime: userEmailPreference.digestTime,
+      timezone: user.timezone,
+    })
     .from(userEmailPreference)
+    .innerJoin(user, eq(user.id, userEmailPreference.userId))
     .where(eq(userEmailPreference.deliveryMode, "digest"));
 
   let queued = 0;
@@ -77,7 +83,7 @@ export async function handleNotificationDigestScan(
     }
 
     // Compare against the user's OWN timezone, not UTC.
-    const local = localTime(now, pref.digestTimezone);
+    const local = localTime(now, pref.timezone);
     const digestMinutes = hours * 60 + minutes;
 
     // Fire in exactly one scan bucket: [digestTime, digestTime + interval).

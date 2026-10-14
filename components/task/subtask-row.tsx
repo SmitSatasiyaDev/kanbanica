@@ -12,6 +12,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { updateTask, updateTaskStatus } from "@/app/actions/task";
 import { addAssignee, removeAssignee } from "@/app/actions/task-assignee";
+import { useToday } from "@/components/common/timezone-provider";
 import { UserAvatar } from "@/components/common/user-avatar";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { dateStrToLocalDate, dateToDay, toDay } from "@/lib/due-date";
 import { cn } from "@/lib/utils";
 
 type StatusType = "OPEN" | "ACTIVE" | "CLOSED";
@@ -33,8 +35,8 @@ interface Assignee {
 
 export interface SubtaskRowData {
   assignees: Assignee[];
-  dueDateEnd: Date | string | null;
-  dueDateStart: Date | string | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   listId: string | null;
   seqNumber: number;
@@ -72,12 +74,10 @@ const STATUS_GROUPS: { type: StatusType; label: string }[] = [
   { type: "CLOSED", label: "Closed" },
 ];
 
-function toDate(v: Date | string | null): Date | null {
-  if (!v) {
-    return null;
-  }
-  const d = v instanceof Date ? v : new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+// Stored due dates are `YYYY-MM-DD` days; local state holds their local-midnight Date.
+function toDate(v: string | null): Date | null {
+  const day = toDay(v);
+  return day ? dateStrToLocalDate(day) : null;
 }
 
 export function SubtaskRow({
@@ -130,8 +130,8 @@ export function SubtaskRow({
   const isClosed =
     (statuses.find((s) => s.id === statusId)?.type ?? subtask.statusType) ===
     "CLOSED";
-  const overdue =
-    !!dueEnd && !isClosed && dueEnd < new Date(new Date().setHours(0, 0, 0, 0));
+  const today = useToday();
+  const overdue = !!dueEnd && !isClosed && dateToDay(dueEnd) < today;
 
   async function chooseStatus(s: { id: string }) {
     setStatusOpen(false);
@@ -179,10 +179,11 @@ export function SubtaskRow({
 
   async function setDueDate(date: Date | null) {
     setDueOpen(false);
+    const day = date ? dateToDay(date) : null;
     const patch =
       dueStart && date
-        ? { dueDateEnd: date }
-        : { dueDateStart: date, dueDateEnd: date };
+        ? { dueDateEnd: day }
+        : { dueDateStart: day, dueDateEnd: day };
     setDueEnd(date);
     if (date && !dueStart) {
       setDueStart(date);

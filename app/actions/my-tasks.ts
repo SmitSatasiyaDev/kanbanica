@@ -19,8 +19,8 @@ import { getAccessibleSpaceIds } from "@/lib/permissions";
 import { notDeleted } from "@/lib/task-visibility";
 
 export interface MyTask {
-  dueDateEnd: Date | null;
-  dueDateStart: Date | null;
+  dueDateEnd: string | null;
+  dueDateStart: string | null;
   id: string;
   list: { id: string; name: string };
   priority: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";

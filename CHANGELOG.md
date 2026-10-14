@@ -30,6 +30,41 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
+### Fixed
+- **`email.outbox-reap` no longer fails on every run.** Emails stuck in the
+  `sending` state after a worker crash are marked `failed` again (the cutoff
+  date was passed to the database driver unencoded).
+- Space Activity avatars now show the user's photo instead of initials.
+- **A task due today no longer turns "Overdue" a few hours after you set it.**
+  Due dates are now calendar days, and "today" is computed once, in your own
+  timezone, everywhere (list/board/calendar, My Tasks, workspace overview,
+  filters and search). See `docs/due-dates.md`.
+
+### Added
+- **Timezone setting** (Profile → Timezone). Auto-detected from the browser on
+  first visit; also used for the daily email digest.
+- **Space Activity redesign.** Full-width timeline grouped by day (in your
+  timezone), with search (task, `#number`, person, activity text), activity-type
+  and date-range filters, clickable task/list links, exact timestamps on hover
+  and "Load more" pagination.
+- **Orbit → Queues → queue details.** Click a queue to see its status, last run
+  and last success, schedule, the latest failure's error, recent runs
+  (filterable by state) and queue settings.
+- **Orbit → Email** shows Outbox and Events as tabs with totals, so delivery
+  events are no longer hidden below the outbox; all outbox columns (status,
+  attempts, created) fit on every screen size.
+
+### Changed
+- `task.due_date_start` / `task.due_date_end` and `sprint.start_date` /
+  `sprint.end_date` are now `date` columns (migrations `0037`, `0038`; existing
+  values are converted automatically). Sprint auto-close waits until the end
+  day is over in every timezone, and due-date reminders are sent per
+  recipient's own timezone. CSV export writes
+  `YYYY-MM-DD`; import requires it. Migrations `0036`–`0038` must be applied
+  before deploying.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added
@@ -54,6 +89,12 @@ dated section, e.g.:
 
 ### Fixed
 - Dependency activity entries no longer render `"undefined"` for the task title.
+
+### Documentation
+- Persistent storage is now called out as **required** for image-only deployments
+  (Dokploy, Coolify, `docker run`): mount a volume at `/app/uploads` or use S3/R2,
+  otherwise uploads are lost on redeploy. The container also logs a warning at boot
+  when `/app/uploads` is not a mounted volume.
 
 ### Upgrade notes
 - Six new database migrations (0030–0035: checklist tables and the password

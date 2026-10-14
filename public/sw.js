@@ -39,7 +39,7 @@ self.addEventListener("push", (event) => {
       await self.registration.showNotification(data.title ?? "Kanbanica", {
         body: data.body ?? "",
         icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        badge: "/Kanbanica.png",
         data: { url: data.url ?? "/" },
         requireInteraction: false,
       });

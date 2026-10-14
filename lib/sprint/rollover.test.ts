@@ -194,7 +194,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 1",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -222,7 +222,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -247,6 +247,9 @@ describe("closeSprintAndRollover", () => {
       spaceId: "sp1",
       name: incrementSprintName("Sprint 5"),
       status: "PLANNED",
+      // Calendar days: the day after the old end, then +2 weeks.
+      startDate: "2024-01-02",
+      endDate: "2024-01-16",
     });
   });
 
@@ -256,7 +259,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -280,7 +283,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -306,7 +309,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -330,7 +333,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -365,7 +368,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],
@@ -388,7 +391,7 @@ describe("closeSprintAndRollover", () => {
         {
           status: "ACTIVE",
           name: "Sprint 5",
-          endDate: new Date("2024-01-01T00:00:00Z"),
+          endDate: "2024-01-01",
           durationWeeks: 2,
         },
       ],

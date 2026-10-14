@@ -11,7 +11,6 @@ import {
   TargetIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { format } from "date-fns";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -26,6 +25,7 @@ import {
   startSprint,
 } from "@/app/actions/sprint";
 import { createTask } from "@/app/actions/task";
+import { useToday } from "@/components/common/timezone-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +39,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { daysBetween, formatDay } from "@/lib/due-date";
 import { AddTasksToSprintModal } from "./add-tasks-to-sprint-modal";
 import { CloseSprintModal } from "./close-sprint-modal";
 import { CreateSprintModal } from "./create-sprint-modal";
@@ -47,11 +48,11 @@ import { CreateSprintModal } from "./create-sprint-modal";
 
 interface SprintRow {
   createdAt: Date;
-  endDate: Date | null;
+  endDate: string | null;
   goal: string | null;
   id: string;
   name: string;
-  startDate: Date | null;
+  startDate: string | null;
   status: "PLANNED" | "ACTIVE" | "CLOSED";
 }
 
@@ -69,25 +70,16 @@ interface SprintPanelProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(date: Date | null): string {
-  if (!date) {
-    return "—";
-  }
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+function formatDate(date: string | null): string {
+  return date ? formatDay(date) : "—";
 }
 
-function getDaysRemaining(endDate: Date | null): number | null {
-  if (!endDate) {
-    return null;
-  }
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(0, 0, 0, 0);
-  return Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+// Sprint dates are calendar days; `today` is the viewer's (useToday()).
+function getDaysRemaining(
+  endDate: string | null,
+  today: string
+): number | null {
+  return endDate ? daysBetween(today, endDate) : null;
 }
 
 // ─── Inline create task input ─────────────────────────────────────────────────
@@ -237,7 +229,8 @@ function ActiveSprintCard({
   onAddTasks: () => void;
   onRefresh: () => void;
 }) {
-  const daysRemaining = getDaysRemaining(sprint.endDate);
+  const today = useToday();
+  const daysRemaining = getDaysRemaining(sprint.endDate, today);
   const isOverdue = daysRemaining !== null && daysRemaining < 0;
   const percent =
     progress && progress.total > 0
@@ -813,13 +806,9 @@ export function SprintPanel({
                               </p>
                               {(s.startDate || s.endDate) && (
                                 <p className="text-[11px] text-base-content/70 truncate">
-                                  {s.startDate
-                                    ? format(new Date(s.startDate), "MMM d")
-                                    : "—"}
+                                  {s.startDate ? formatDay(s.startDate) : "—"}
                                   {" → "}
-                                  {s.endDate
-                                    ? format(new Date(s.endDate), "MMM d")
-                                    : "—"}
+                                  {s.endDate ? formatDay(s.endDate) : "—"}
                                 </p>
                               )}
                             </div>

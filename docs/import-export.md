@@ -69,8 +69,8 @@ workspace counts — active, completed, **archived** and subtasks.
 | Status | The list's status name |
 | Priority | `NONE` / `LOW` / `MEDIUM` / `HIGH` / `URGENT` |
 | Assignees | `Name <email>`, multiple separated by `; ` |
-| Start Date | ISO 8601 |
-| Due Date | ISO 8601 |
+| Start Date | `YYYY-MM-DD` (a calendar day, no time or timezone) |
+| Due Date | `YYYY-MM-DD` (a calendar day, no time or timezone) |
 | Tags | Names, separated by `; ` |
 | Project | The space's name |
 | List | |
@@ -125,8 +125,10 @@ members, tags, and custom fields can change between the two steps):
   its first status if none is marked Open) — this is a warning, not an error.
 - **Priority**: must be `NONE`/`LOW`/`MEDIUM`/`HIGH`/`URGENT` (case-insensitive)
   or blank (defaults to `NONE`).
-- **Dates**: must parse as a date; a due date before the start date is a
-  warning, not an error.
+- **Dates**: must be a real calendar day written `YYYY-MM-DD` (a full ISO
+  timestamp from an older export is accepted — its date part is used);
+  anything else (`01/31/2030`, `2030-02-30`) is an error. A due date before
+  the start date is a warning, not an error. See `docs/due-dates.md`.
 - **Assignee(s)**: each name/value must match an active workspace member's
   email (case-insensitive). An unresolved one is an error:
   `Assignee "John Doe" was not found`.

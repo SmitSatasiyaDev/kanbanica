@@ -180,23 +180,23 @@ describe("handleSprintAutoClose eligibility query", () => {
     expect(sql).not.toContain("sprint_auto_archive_after_n");
   });
 
-  it("compares end_date strictly before today's local midnight (NULL end dates never match)", async () => {
+  it("compares end_date strictly before the calendar day in UTC-12 (NULL end dates never match)", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 5, 14, 30)); // 2026-10-05 14:30 local
+    vi.setSystemTime(new Date("2026-10-05T14:30:00Z")); // 02:30 on Oct 5 in UTC-12
     const { sql, params } = await renderWhere();
     expect(sql).toContain('"sprint"."end_date" < $3');
-    const cutoff = params[2] as string | Date;
-    expect(new Date(cutoff).getTime()).toBe(new Date(2026, 9, 5).getTime());
+    expect(params[2]).toBe("2026-10-05");
   });
 
-  it("treats a sprint ending today as not yet overdue, and one ending 3 days ago as overdue", async () => {
+  it("waits until the end day is over everywhere before closing", async () => {
+    // 10:00Z Oct 5 is still Oct 4 in UTC-12, so a sprint ending Oct 4 is not
+    // yet overdue for everyone; one ending Oct 3 is.
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 5, 0, 5));
+    vi.setSystemTime(new Date("2026-10-05T10:00:00Z"));
     const { params } = await renderWhere();
-    const cutoff = new Date(params[2] as string | Date).getTime();
-    const endsToday = new Date(2026, 9, 5).getTime();
-    const endedOct2 = new Date(2026, 9, 2).getTime();
-    expect(endsToday < cutoff).toBe(false);
-    expect(endedOct2 < cutoff).toBe(true);
+    const cutoff = params[2] as string;
+    expect(cutoff).toBe("2026-10-04");
+    expect(cutoff > "2026-10-04").toBe(false);
+    expect(cutoff > "2026-10-03").toBe(true);
   });
 });
