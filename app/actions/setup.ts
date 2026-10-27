@@ -66,7 +66,7 @@ export async function createFirstAdmin(input: {
       await tx.insert(account).values({
         id: randomUUID(),
         userId,
-        accountId: email,
+        accountId: userId,
         providerId: "credential",
         password: hashed,
         createdAt: now,
