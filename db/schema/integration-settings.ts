@@ -53,6 +53,10 @@ export const integrationSettings = pgTable("integration_settings", {
     .notNull()
     .default(true),
 
+  // Platform-wide switch for MCP / personal API token access (/api/mcp and the
+  // Profile "API tokens" card). No env fallback — default on. Read per request.
+  mcpEnabled: boolean("mcp_enabled").notNull().default(true),
+
   // Self-serve email + password sign-UP (/signup). Nullable on purpose:
   // null = never set from the app, so `.env` ALLOW_PASSWORD_SIGNUP decides (and
   // an `.env`-only deployment behaves exactly as before). true/false overrides it.

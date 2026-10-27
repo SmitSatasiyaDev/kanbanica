@@ -11,6 +11,7 @@ export const JOB_NAMES = {
   IMPERSONATION_CLEANUP: "impersonation.cleanup",
   SUPPORT_TICKET_AUTO_CLOSE: "support.ticket-auto-close",
   TRASH_AUTO_PURGE: "trash.auto-purge",
+  RATE_LIMIT_CLEANUP: "rate-limit.cleanup",
 } as const;
 
 // Sprint auto-close is idempotent (it only touches ACTIVE sprints past their end
@@ -22,6 +23,10 @@ export const SPRINT_AUTO_CLOSE_CRON = "0 * * * *";
 // Trash auto-purge is stateless (it re-queries by deletedAt every run), so a daily
 // slot is enough; startWorker() also fires one catch-up run on boot.
 export const TRASH_AUTO_PURGE_CRON = "30 2 * * *";
+
+// Rate-limit counters are only useful for the current window; every 15 minutes
+// is often enough to keep the table tiny.
+export const RATE_LIMIT_CLEANUP_CRON = "*/15 * * * *";
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];
 
@@ -46,4 +51,5 @@ export type JobPayloads = {
   [JOB_NAMES.IMPERSONATION_CLEANUP]: Record<string, never>;
   [JOB_NAMES.SUPPORT_TICKET_AUTO_CLOSE]: { dryRun?: boolean };
   [JOB_NAMES.TRASH_AUTO_PURGE]: Record<string, never>;
+  [JOB_NAMES.RATE_LIMIT_CLEANUP]: Record<string, never>;
 };

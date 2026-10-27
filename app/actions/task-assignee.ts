@@ -3,10 +3,10 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { headers } from "next/headers";
 import {
+  list,
   task,
   taskAssignee,
   taskWatcher,
-  user,
   workspaceMember,
 } from "@/db/schema";
 import { writeActivityLog } from "@/lib/activity-log";
@@ -16,34 +16,36 @@ import {
   type BulkNotifyTaskInfo,
   createBulkNotifications,
 } from "@/lib/notifications/create-bulk-notifications";
-import { createNotifications } from "@/lib/notifications/create-notification";
 import {
   canAccessSpace,
   getSpacePermission,
-  getWorkspaceMembership,
   hasPermissionLevel,
+  requireEditAccess,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { webActor } from "@/lib/services/actor";
+import {
+  effectiveTaskSpaceId,
+  resolveTaskContext,
+  type TaskContext,
+  taskRevalidatePaths,
+} from "@/lib/services/task-context";
+import { assignTask } from "@/lib/services/task-service";
 import { notDeleted } from "@/lib/task-visibility";
 
-// `taskId` lets an open task detail view skip refetching for other tasks.
-function revalidateTask(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
-  taskId?: string
-) {
-  void refreshWorkspace(
-    workspaceId,
-    [`/${workspaceId}/${spaceId}/list/${listId}`],
-    { taskId }
-  );
+// `taskId` lets an open task detail view skip refetching for other tasks. The
+// location comes from the task's own context, and the refresh also runs for
+// tasks that have no list.
+function revalidateTask(ctx: TaskContext) {
+  void refreshWorkspace(ctx.workspaceId, taskRevalidatePaths(ctx), {
+    taskId: ctx.taskId,
+  });
 }
 
 export async function addAssignee(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   assigneeUserId: string
 ): Promise<{ ok: true } | { error: string }> {
@@ -52,77 +54,22 @@ export async function addAssignee(
     return { error: "Unauthorized" };
   }
 
-  const permission = await getSpacePermission(
-    session.user.id,
-    workspaceId,
-    spaceId
-  );
-  if (permission === null || !hasPermissionLevel(permission, "edit")) {
-    return { error: "Forbidden" };
-  }
-
-  // Verify assignee is active in workspace
-  const assigneeMembership = await getWorkspaceMembership(
-    assigneeUserId,
-    workspaceId
-  );
-  if (assigneeMembership?.status !== "ACTIVE") {
-    return { error: "User is not an active workspace member" };
-  }
-
-  await db
-    .insert(taskAssignee)
-    .values({ taskId, userId: assigneeUserId })
-    .onConflictDoNothing();
-
-  // Auto-watch assignee
-  await db
-    .insert(taskWatcher)
-    .values({ taskId, userId: assigneeUserId })
-    .onConflictDoNothing();
-
-  // Notify the assignee (skip if assigning to yourself)
-  if (assigneeUserId !== session.user.id) {
-    const [taskRow] = await db
-      .select({ title: task.title })
-      .from(task)
-      .where(and(eq(task.id, taskId), notDeleted()))
-      .limit(1);
-
-    if (taskRow) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds: [assigneeUserId],
-        triggerType: "task_assigned",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `${actorName} assigned you to "${taskRow.title}"`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  const [assigneeUser] = await db
-    .select({ name: user.name, email: user.email })
-    .from(user)
-    .where(eq(user.id, assigneeUserId))
-    .limit(1);
-  await writeActivityLog(taskId, session.user.id, "assignee_added", {
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const res = await assignTask(webActor(session), taskId, {
     userId: assigneeUserId,
-    user_name: assigneeUser?.name ?? assigneeUser?.email ?? "someone",
+    returnAssignees: false,
   });
-  if (listId) {
-    revalidateTask(workspaceId, spaceId, listId, taskId);
+  if ("error" in res) {
+    return { error: res.error };
   }
   return { ok: true };
 }
 
 export async function removeAssignee(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   assigneeUserId: string
 ): Promise<{ ok: true } | { error: string }> {
@@ -131,56 +78,13 @@ export async function removeAssignee(
     return { error: "Unauthorized" };
   }
 
-  const permission = await getSpacePermission(
-    session.user.id,
-    workspaceId,
-    spaceId
-  );
-  if (permission === null || !hasPermissionLevel(permission, "edit")) {
-    return { error: "Forbidden" };
-  }
-
-  await db
-    .delete(taskAssignee)
-    .where(
-      and(
-        eq(taskAssignee.taskId, taskId),
-        eq(taskAssignee.userId, assigneeUserId)
-      )
-    );
-
-  const [removedUser] = await db
-    .select({ name: user.name, email: user.email })
-    .from(user)
-    .where(eq(user.id, assigneeUserId))
-    .limit(1);
-  await writeActivityLog(taskId, session.user.id, "assignee_removed", {
+  const res = await assignTask(webActor(session), taskId, {
     userId: assigneeUserId,
-    user_name: removedUser?.name ?? removedUser?.email ?? "someone",
+    unassign: true,
+    returnAssignees: false,
   });
-
-  if (assigneeUserId !== session.user.id) {
-    const [taskRow] = await db
-      .select({ title: task.title })
-      .from(task)
-      .where(and(eq(task.id, taskId), notDeleted()))
-      .limit(1);
-    if (taskRow) {
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds: [assigneeUserId],
-        triggerType: "task_unassigned",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `You were unassigned from "${taskRow.title}"`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  if (listId) {
-    revalidateTask(workspaceId, spaceId, listId, taskId);
+  if ("error" in res) {
+    return { error: res.error };
   }
   return { ok: true };
 }
@@ -243,11 +147,18 @@ export async function bulkAssignTasks(
 
   // Scope to tasks that actually belong to this space — guards against
   // stale/foreign ids reaching this action.
+  // The space is the list's space, falling back to the task's own column, so
+  // tasks whose `space_id` is null (e.g. subtasks) are not missed.
   const validTasks = await db
     .select({ id: task.id, title: task.title })
     .from(task)
+    .leftJoin(list, eq(task.listId, list.id))
     .where(
-      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+      and(
+        inArray(task.id, taskIds),
+        eq(effectiveTaskSpaceId, spaceId),
+        notDeleted()
+      )
     );
   if (validTasks.length === 0) {
     return { ok: true, updated: 0 };
@@ -369,21 +280,19 @@ export async function bulkAssignTasks(
           },
   });
 
-  if (listId) {
-    revalidateTask(workspaceId, spaceId, listId);
-  } else {
-    void refreshWorkspace(workspaceId, [
-      `/${workspaceId}/${spaceId}`,
-      `/${workspaceId}`,
-    ]);
-  }
+  void refreshWorkspace(
+    workspaceId,
+    listId
+      ? [`/${workspaceId}/${spaceId}/list/${listId}`]
+      : [`/${workspaceId}/${spaceId}`, `/${workspaceId}`]
+  );
   return { ok: true, updated: validTaskIds.length };
 }
 
 export async function addWatcher(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   watcherUserId?: string // defaults to self
 ): Promise<{ ok: true } | { error: string }> {
@@ -392,28 +301,56 @@ export async function addWatcher(
     return { error: "Unauthorized" };
   }
 
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+
   const accessible = await canAccessSpace(
     session.user.id,
-    workspaceId,
-    spaceId
+    ctx.workspaceId,
+    ctx.spaceId
   );
   if (!accessible) {
     return { error: "Unauthorized" };
   }
 
   const userId = watcherUserId ?? session.user.id;
+
+  // Watching yourself needs View. Adding someone else needs Edit, and that
+  // person must be able to see the task (watchers receive its notifications).
+  if (userId !== session.user.id) {
+    const editErr = await requireEditAccess(
+      session.user.id,
+      ctx.workspaceId,
+      ctx.spaceId
+    );
+    if (editErr) {
+      return editErr;
+    }
+    const targetCanAccess = await canAccessSpace(
+      userId,
+      ctx.workspaceId,
+      ctx.spaceId
+    );
+    if (!targetCanAccess) {
+      return { error: "User cannot access this task" };
+    }
+  }
 
   await db.insert(taskWatcher).values({ taskId, userId }).onConflictDoNothing();
 
   await writeActivityLog(taskId, session.user.id, "watcher_added", { userId });
-  revalidateTask(workspaceId, spaceId, listId, taskId);
+  revalidateTask(ctx);
   return { ok: true };
 }
 
 export async function removeWatcher(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   watcherUserId?: string // defaults to self
 ): Promise<{ ok: true } | { error: string }> {
@@ -422,16 +359,36 @@ export async function removeWatcher(
     return { error: "Unauthorized" };
   }
 
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+
   const accessible = await canAccessSpace(
     session.user.id,
-    workspaceId,
-    spaceId
+    ctx.workspaceId,
+    ctx.spaceId
   );
   if (!accessible) {
     return { error: "Unauthorized" };
   }
 
   const userId = watcherUserId ?? session.user.id;
+
+  // Removing someone else needs Edit. The target is not required to still have
+  // access, so a watcher who lost access can be cleaned up.
+  if (userId !== session.user.id) {
+    const editErr = await requireEditAccess(
+      session.user.id,
+      ctx.workspaceId,
+      ctx.spaceId
+    );
+    if (editErr) {
+      return editErr;
+    }
+  }
 
   await db
     .delete(taskWatcher)
@@ -440,14 +397,14 @@ export async function removeWatcher(
   await writeActivityLog(taskId, session.user.id, "watcher_removed", {
     userId,
   });
-  revalidateTask(workspaceId, spaceId, listId, taskId);
+  revalidateTask(ctx);
   return { ok: true };
 }
 
 export async function toggleWatcher(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ watching: boolean } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -455,10 +412,17 @@ export async function toggleWatcher(
     return { error: "Unauthorized" };
   }
 
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+
   const accessible = await canAccessSpace(
     session.user.id,
-    workspaceId,
-    spaceId
+    ctx.workspaceId,
+    ctx.spaceId
   );
   if (!accessible) {
     return { error: "Unauthorized" };
@@ -484,13 +448,13 @@ export async function toggleWatcher(
           eq(taskWatcher.userId, session.user.id)
         )
       );
-    revalidateTask(workspaceId, spaceId, listId, taskId);
+    revalidateTask(ctx);
     return { watching: false };
   }
   await db
     .insert(taskWatcher)
     .values({ taskId, userId: session.user.id })
     .onConflictDoNothing();
-  revalidateTask(workspaceId, spaceId, listId, taskId);
+  revalidateTask(ctx);
   return { watching: true };
 }

@@ -328,6 +328,8 @@ function SortableSprintListRow(
   } = useSortable({
     id: props.task.id,
     data: { type: "sprint-task", statusId: props.task.statusId },
+    // Dragging changes status / order, which needs Edit.
+    disabled: !props.canEdit,
   });
   return (
     <TaskListRow
@@ -1318,11 +1320,13 @@ function SprintBoardCard({
   workspaceId,
   sprintId,
   taskNavIds,
+  canEdit,
 }: {
   task: SprintTask;
   workspaceId: string;
   sprintId: string;
   taskNavIds: string[];
+  canEdit?: boolean;
 }) {
   const {
     attributes,
@@ -1334,6 +1338,8 @@ function SprintBoardCard({
   } = useSortable({
     id: task.id,
     data: { type: "task", statusId: task.statusId },
+    // Dragging changes status / order, which needs Edit.
+    disabled: !canEdit,
   });
 
   const style = {
@@ -1384,12 +1390,14 @@ function SprintBoardColumn({
   workspaceId,
   sprintId,
   taskNavIds,
+  canEdit,
 }: {
   status: { id: string; name: string; color: string };
   tasks: SprintTask[];
   workspaceId: string;
   sprintId: string;
   taskNavIds: string[];
+  canEdit?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status.id });
 
@@ -1434,6 +1442,7 @@ function SprintBoardColumn({
         >
           {tasks.map((t) => (
             <SprintBoardCard
+              canEdit={canEdit}
               key={t.id}
               sprintId={sprintId}
               task={t}
@@ -1666,7 +1675,7 @@ export function SprintListView({
   async function onDragEnd({ active, over }: DragEndEvent) {
     setActiveDragTask(null);
     endDrag();
-    if (!over) {
+    if (!(over && canEdit)) {
       return;
     }
     const activeId = active.id as string;
@@ -2349,6 +2358,7 @@ export function SprintListView({
           <div className="flex gap-3 overflow-x-auto pb-4 items-start">
             {effectiveStatuses.map((status) => (
               <SprintBoardColumn
+                canEdit={canEdit}
                 key={status.id}
                 sprintId={sprintInfo.id}
                 status={status}

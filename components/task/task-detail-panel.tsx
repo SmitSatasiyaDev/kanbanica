@@ -808,6 +808,7 @@ export function TaskDetailPanel({
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-1">
               <Select
+                disabled={!canEdit}
                 onValueChange={handleStatusChange}
                 value={t.statusId ?? undefined}
               >
@@ -875,6 +876,7 @@ export function TaskDetailPanel({
             </div>
 
             <Select
+              disabled={!canEdit}
               onValueChange={(v) => handlePriorityChange(v as Priority)}
               value={t.priority}
             >

@@ -1,4 +1,8 @@
-import { BellIcon, UserPlusIcon } from "@phosphor-icons/react/dist/ssr";
+import {
+  BellIcon,
+  PlugsConnectedIcon,
+  UserPlusIcon,
+} from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { OrbitPageHeader } from "@/components/admin/orbit-page-header";
 import {
@@ -25,6 +29,13 @@ const SETTINGS_SECTIONS = [
     description:
       "Platform-wide notification controls, such as notification emails.",
     icon: BellIcon,
+  },
+  {
+    href: "/orbit/settings/mcp",
+    title: "API access (MCP)",
+    description:
+      "Let users connect tools like Claude Code with personal API tokens.",
+    icon: PlugsConnectedIcon,
   },
 ];
 

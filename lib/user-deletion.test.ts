@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   account,
+  apiToken,
   channelMember,
   checklistTask,
   commentReaction,
@@ -132,6 +133,7 @@ describe("purgeUser", () => {
       userEmailPreference,
       mutedEntity,
       pushSubscription,
+      apiToken,
       userSearchHistory,
       savedFilter,
       userOnboardingProgress,

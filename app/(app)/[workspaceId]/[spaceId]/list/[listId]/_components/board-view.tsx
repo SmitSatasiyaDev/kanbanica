@@ -658,6 +658,9 @@ function CardContent({
   }, [task.subtaskCount]);
 
   async function handleToggleSubtaskComplete(sub: SubtaskRow) {
+    if (!canEdit) {
+      return;
+    }
     const isDone = sub.statusType === "CLOSED";
     const doneStatus = statuses?.find((s) => s.type === "CLOSED");
     const openStatus =
@@ -1278,7 +1281,8 @@ function CardContent({
                         tabIndex={0}
                       >
                         <button
-                          className="shrink-0 text-base-content/60 transition-colors hover:text-primary"
+                          className="shrink-0 text-base-content/60 transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-base-content/60"
+                          disabled={!canEdit}
                           onClick={(e) => {
                             e.stopPropagation();
                             void handleToggleSubtaskComplete(sub);
@@ -1576,6 +1580,8 @@ function TaskCard({
   } = useSortable({
     id: task.id,
     data: { type: "task", statusId: task.statusId },
+    // Dragging changes status / order, which needs Edit.
+    disabled: !canEdit,
   });
 
   const style = {
@@ -2140,7 +2146,7 @@ export function BoardView({
   async function onDragEnd({ active, over }: DragEndEvent) {
     setActiveTask(null);
     endDrag();
-    if (!over) {
+    if (!(over && canEdit)) {
       return;
     }
 

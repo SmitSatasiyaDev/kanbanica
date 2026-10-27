@@ -280,6 +280,8 @@ function SortableTaskRow(
   } = useSortable({
     id: props.task.id,
     data: { type: "task", statusId: props.task.statusId },
+    // Dragging changes status / order / assignee, which needs Edit.
+    disabled: !props.canEdit,
   });
   return (
     <TaskListRow
@@ -2598,7 +2600,7 @@ export function ListView({
 
   async function onDragEnd({ active, over }: DragEndEvent) {
     endDrag();
-    if (!over) {
+    if (!(over && canEdit)) {
       return;
     }
 

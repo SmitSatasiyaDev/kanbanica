@@ -51,6 +51,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // does, every field starts blank.
 const EMPTY_INTEGRATION_SETTINGS: IntegrationSettingsSummary = {
   auth: { passwordSignupEnabled: false },
+  mcp: { enabled: true },
   notifications: { emailsEnabled: true },
   smtp: { host: "", port: 587, user: "", from: "", hasPassword: false },
   google: { clientId: "", hasClientSecret: false },

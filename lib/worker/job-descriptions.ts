@@ -31,6 +31,8 @@ export const JOB_DESCRIPTIONS: Record<string, string> = {
     "Closes OPEN support tickets with no activity for 14 days.",
   [JOB_NAMES.TRASH_AUTO_PURGE]:
     "Permanently deletes tasks that have been in the Trash for 30+ days (storage files first). Also runs once on worker boot to catch up.",
+  [JOB_NAMES.RATE_LIMIT_CLEANUP]:
+    "Deletes API rate-limit counters from windows that ended more than an hour ago.",
   "__pgboss__send-it":
     "Internal pg-boss queue. The scheduler uses it to deliver each cron tick into the target queue.",
 };
