@@ -199,10 +199,10 @@ Point your platform at the published image directly rather than building from so
 Pin a version in production, because `latest` moves with every release:
 
 ```bash
-docker pull ghcr.io/stack256org/kanbanica:0.6.0
+docker pull ghcr.io/stack256org/kanbanica:0.7.0
 ```
 
-Also tagged `0`, `0.6`, and `latest` — every tag covers both Intel and ARM.
+Also tagged `0`, `0.7`, and `latest` — every tag covers both Intel and ARM.
 <!-- END GENERATED: image-tag -->
 
 **Railway, Render, Fly.io, or anything else building from source.**

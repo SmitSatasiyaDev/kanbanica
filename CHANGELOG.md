@@ -30,6 +30,97 @@ dated section, e.g.:
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-27
+
+**Connect AI agents to Kanbanica over MCP, plus a round of security and permission fixes.**
+This release adds an MCP server with personal API tokens, closes several
+access-control gaps (file downloads, task actions) and upgrades the framework and
+most dependencies. **Read the upgrade notes below before updating.**
+
+### Upgrade notes
+- **Apply migrations `0039`–`0041` before deploying** (`pnpm db:migrate:prod`, or the
+  `migrate` service in Docker Compose). `0039` and `0040` are additive (API tokens,
+  rate-limit counters). **`0041` fixes admins created by the `/setup` wizard or
+  `pnpm create:admin`**: better-auth 1.7 looks up the password account by user id,
+  and those admins were stored under their email, so without `0041` they get
+  "invalid email or password" after the upgrade. The migration is a one-line,
+  idempotent `UPDATE`; no action is needed beyond running it.
+- **Reverse proxy:** if you upload files through nginx, set
+  `client_max_body_size 45m;` (the MCP endpoint accepts up to 40 MB per request,
+  and nginx's 1 MB default also blocks normal 10 MB uploads). See `DEPLOYMENT.md`.
+  Caddy needs no change.
+- **Node 22 or newer** is required (the Docker images already use Node 22).
+- **Magic links sent before the upgrade stop working.** better-auth 1.7 stores them
+  under a new key. They expire after 5 minutes anyway, so users only need to request
+  a new link.
+- **pg-boss** (background jobs) upgrades its own schema automatically the first time
+  the worker starts; nothing to run by hand.
+
+### Added
+- **MCP server and personal API tokens.** Users can connect AI tools such as Claude
+  Code, Cursor and the Claude app and work on tasks from there: list "my tasks",
+  search, read a task with its comments and images, create tasks and subtasks,
+  change status, assign, comment (with screenshots), attach files and read
+  notifications. The agent acts **as the user** and never sees or does more than the
+  web app allows; changes appear in the activity feed and update open boards live.
+  There are no delete, archive or bulk tools.
+  - Create tokens under the user menu → **API tokens & MCP**: read-only or
+    read & write, optionally limited to one workspace, with an expiry. Tokens are
+    shown once and stored only as a hash; they can be revoked at any time.
+  - Admins can turn the feature off in **Orbit → Settings → API access (MCP)**.
+  - Endpoint: `POST /api/mcp`. Requests are rate limited per token and per user.
+  - See `docs/mcp-user-guide.md` (setup and usage) and `docs/mcp.md` (spec).
+
+### Fixed
+- **Task actions now check the project the task is really in.** A user with access
+  to one project could read or change a task, comment, assignee, watcher or time
+  entry in another project by sending that project's ids. The location is now
+  always taken from the task itself. Moving a task (single or bulk) also checks the
+  target list: it must exist, not be archived, belong to the same workspace, and the
+  user needs Edit access to the target project.
+- **Changing a task's status now needs Edit access.** View-only members could
+  change status from the task panel, the task page, the list row menu, and by
+  dragging cards on the List, Board and Sprint views. Those controls are now
+  disabled for them, and the server refuses the change and any status that belongs
+  to another project.
+- **Creating a task no longer accepts any assignee or status.** Assignees must be
+  active workspace members who can open the project (otherwise they were notified
+  about a task they could not see), and the status must belong to the project.
+- Watching a task on behalf of someone else needs Edit access and that person's
+  access to the task.
+- Deleting a comment now checks Full access on the comment's own project, not on a
+  project the caller chose.
+
+### Security
+- **`/api/files` checked only that you were signed in.** Any signed-in user could
+  download any stored file, including private task attachments of workspaces they
+  do not belong to, if they knew the file path. Downloads now go through the normal
+  workspace and project permission rules (archived projects stay readable, files of
+  trashed tasks only for Owners/Admins, chat files need workspace membership,
+  avatars stay visible to any signed-in user). Files that are not allowed look the
+  same as missing files (404). Path tricks (`..` segments, backslashes) are refused;
+  dots inside file names are fine.
+- **Uploaded SVG files could run scripts** on the app's origin with the viewer's
+  session. Every file is now sent with `X-Content-Type-Options: nosniff`; only
+  png, jpg, gif, webp, pdf and txt open in the browser, everything else (SVG
+  included) downloads; files that still render get a sandboxing
+  `Content-Security-Policy`. File responses also send `Vary: Cookie`, so a browser
+  does not show one account's cached file to the next account that signs in.
+- Dependency advisories resolved: **next** (2 critical, 1 high), **zod** (high),
+  **source-map-js** via postcss (high), **nodemailer** (2 high, 7 moderate), and,
+  through the MCP SDK and other packages, **proxy-addr** (critical),
+  **body-parser** (high), **ip-address** and **fast-uri**. `pnpm audit --prod`
+  now reports no known vulnerabilities.
+
+### Changed
+- **Dependency upgrades:** Next.js 16.4, React 19.3, better-auth 1.7, Tiptap 3.32,
+  pg-boss 12.38, nodemailer 10, files-sdk 3, framer-motion 14, vitest 5,
+  `@hookform/resolvers` 6, zod 4.6, drizzle-orm 0.45.4, AWS SDK 3.1156 and other
+  patch/minor updates. Nodemailer now ships its own types, so `@types/nodemailer`
+  was removed.
+- Task, comment, attachment, project and notification logic moved into shared
+  services (`lib/services/*`) used by both the web app and the MCP endpoint.
+
 ## [0.6.0] - 2026-10-13
 
 ### Fixed

@@ -15,7 +15,9 @@ export async function getFallbackCode(token: string): Promise<FallbackCode> {
     return { ok: false, reason: "invalid" };
   }
   const { internalAdapter } = await auth.$context;
-  const row = await internalAdapter.findVerificationValue(token);
+  const row = await internalAdapter.findVerificationValue(
+    `magic-link:${token}`
+  );
   if (!row || row.expiresAt.getTime() <= Date.now()) {
     return { ok: false, reason: "invalid" };
   }

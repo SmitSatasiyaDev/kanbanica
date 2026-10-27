@@ -58,13 +58,13 @@ async function main() {
     if (existingAccount) {
       await db
         .update(account)
-        .set({ password: hashed, updatedAt: now })
+        .set({ accountId: existing.id, password: hashed, updatedAt: now })
         .where(eq(account.id, existingAccount.id));
     } else {
       await db.insert(account).values({
         id: randomUUID(),
         userId: existing.id,
-        accountId: email,
+        accountId: existing.id,
         providerId: "credential",
         password: hashed,
         createdAt: now,
@@ -96,7 +96,7 @@ async function main() {
   await db.insert(account).values({
     id: randomUUID(),
     userId,
-    accountId: email,
+    accountId: userId,
     providerId: "credential",
     password: hashed,
     createdAt: now,
