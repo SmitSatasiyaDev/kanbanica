@@ -3,7 +3,7 @@
 **What changed**
 - New `lib/file-access.ts` with `canReadStoredFile(userId, key)`. It maps a
   storage key to the data it belongs to and applies the normal permission rules:
-  - Keys with `..`, backslashes, empty segments or a leading `/` are refused.
+  - Keys with a `.` or `..` path segment, backslashes, empty segments or a leading `/` are refused. Dots inside a file name (`report..final.pdf`) are fine.
   - `avatars/...`: any signed-in user (avatars are shown across workspaces).
   - `attachments/...`: looks up the `task_attachment` row by exact `fileUrl`,
     joined to the task, its list and the workspace. The space comes from
@@ -46,5 +46,5 @@ session cookie.
 **Verified in the browser (2026-10-27, local instance):** outsider gets 404
 (server); member of a public project gets 200; after the member is removed, 404;
 a different account on the same browser gets 404 even with the default cache
-mode; logged out gets 401; keys with `..` get 404. The owner's PNG and SVG still
+mode; logged out gets 401; keys with a `..` segment get 404. The owner's PNG and SVG still
 display through `<img>`.

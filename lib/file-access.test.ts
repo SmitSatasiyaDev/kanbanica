@@ -70,6 +70,27 @@ describe("canReadStoredFile: key shape", () => {
     expect(selectMock).not.toHaveBeenCalled();
   });
 
+  it("does not treat dots inside a file name as traversal", async () => {
+    // "report..final.pdf" and the sanitised "../../x" upload name are normal
+    // file names, so the key goes on to the attachment lookup.
+    for (const key of [
+      "attachments/w1/t1/a1/report..final.pdf",
+      "attachments/w1/t1/a1/.._.._report.html",
+    ]) {
+      selectMock.mockClear();
+      queueRows([]);
+      expect(await canReadStoredFile("u1", key)).toBe(false);
+      expect(selectMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("refuses a lone '.' segment", async () => {
+    expect(await canReadStoredFile("u1", "attachments/w1/./t1/a1/f.png")).toBe(
+      false
+    );
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
   it("refuses an unknown prefix", async () => {
     expect(await canReadStoredFile("u1", "secrets/w1/file.png")).toBe(false);
     expect(selectMock).not.toHaveBeenCalled();
