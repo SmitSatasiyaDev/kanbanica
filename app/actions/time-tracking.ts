@@ -13,21 +13,43 @@ import {
   requireEditAccess,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
+import {
+  resolveTaskContext,
+  type TaskContext,
+  taskRevalidatePaths,
+} from "@/lib/services/task-context";
 import { notDeleted } from "@/lib/task-visibility";
 
 // Scoped refresh: revalidate the list page (card badges) and hint the open task
-// detail so only THAT task's view refetches.
-function revalidateList(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
-  taskId: string
-) {
-  void refreshWorkspace(
-    workspaceId,
-    [`/${workspaceId}/${spaceId}/list/${listId}`],
-    { taskId }
-  );
+// detail so only THAT task's view refetches. The location comes from the task's
+// own context, never from the caller.
+function revalidateList(ctx: TaskContext) {
+  void refreshWorkspace(ctx.workspaceId, taskRevalidatePaths(ctx), {
+    taskId: ctx.taskId,
+  });
+}
+
+// Loads a time entry and the context of the task it belongs to. Fails with the
+// same "Time entry not found" whether the entry is missing or its task is gone
+// (trashed, or no longer resolvable), so nothing leaks about foreign tasks.
+async function resolveEntryContext(
+  entryId: string
+): Promise<
+  { entry: { userId: string }; ctx: TaskContext } | { error: string }
+> {
+  const [entry] = await db
+    .select({ userId: timeEntry.userId, taskId: timeEntry.taskId })
+    .from(timeEntry)
+    .where(eq(timeEntry.id, entryId))
+    .limit(1);
+  if (!entry) {
+    return { error: "Time entry not found" };
+  }
+  const ctx = await resolveTaskContext(entry.taskId);
+  if (!ctx) {
+    return { error: "Time entry not found" };
+  }
+  return { entry: { userId: entry.userId }, ctx };
 }
 
 const secondsBetween = (from: Date, to: Date) =>
@@ -40,9 +62,9 @@ const secondsBetween = (from: Date, to: Date) =>
 // the started task's title plus, when one was auto-stopped, the stopped task's
 // title (for a two-line toast).
 export async function startTimer(
-  workspaceId: string,
-  spaceId: string,
-  _listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<
   { startedTitle: string; stopped?: { title: string } } | { error: string }
@@ -51,6 +73,14 @@ export async function startTimer(
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
 
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
@@ -69,12 +99,6 @@ export async function startTimer(
 
   const { startedTitle, stopped: stoppedInfo } = await db.transaction(
     async (tx) => {
-      const [startedTask] = await tx
-        .select({ title: task.title })
-        .from(task)
-        .where(and(eq(task.id, taskId), notDeleted()))
-        .limit(1);
-
       // Auto-stop the caller's current running timer, if any.
       const [running] = await tx
         .select({
@@ -118,7 +142,7 @@ export async function startTimer(
         durationSeconds: null,
       });
 
-      return { startedTitle: startedTask?.title ?? "task", stopped };
+      return { startedTitle: ctx.title, stopped };
     }
   );
 
@@ -146,15 +170,23 @@ export async function startTimer(
 // `setTimeEntryNote`) — the note is collected *after* the stop on purpose, so
 // the time spent typing it never lands inside the tracked duration.
 export async function stopTimer(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ ok: true; entryId: string; seconds: number } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
 
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
@@ -185,7 +217,7 @@ export async function stopTimer(
     .where(eq(timeEntry.id, running.id));
 
   await writeActivityLog(taskId, session.user.id, "timer_stopped", { seconds });
-  revalidateList(workspaceId, spaceId, listId, taskId);
+  revalidateList(ctx);
   return { ok: true, entryId: running.id, seconds };
 }
 
@@ -195,10 +227,10 @@ export async function stopTimer(
 // deleting one: its author, or a user with full access. An empty note is valid
 // and clears the field. No activity log — the entry's own history row shows it.
 export async function setTimeEntryNote(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
-  taskId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
+  _taskId: string,
   entryId: string,
   note: string
 ): Promise<{ ok: true } | { error: string }> {
@@ -207,19 +239,18 @@ export async function setTimeEntryNote(
     return { error: "Unauthorized" };
   }
 
+  // The entry decides the task, and the task decides the location. The
+  // caller's workspace / space / list / task are ignored.
+  const found = await resolveEntryContext(entryId);
+  if ("error" in found) {
+    return found;
+  }
+  const { entry, ctx } = found;
+  const { workspaceId, spaceId, taskId } = ctx;
+
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
     return err;
-  }
-
-  const [entry] = await db
-    .select({ userId: timeEntry.userId })
-    .from(timeEntry)
-    .where(and(eq(timeEntry.id, entryId), eq(timeEntry.taskId, taskId)))
-    .limit(1);
-
-  if (!entry) {
-    return { error: "Time entry not found" };
   }
 
   if (entry.userId !== session.user.id) {
@@ -238,7 +269,7 @@ export async function setTimeEntryNote(
     .set({ description: note.trim() || null, updatedAt: new Date() })
     .where(and(eq(timeEntry.id, entryId), eq(timeEntry.taskId, taskId)));
 
-  revalidateList(workspaceId, spaceId, listId, taskId);
+  revalidateList(ctx);
   return { ok: true };
 }
 
@@ -247,9 +278,9 @@ export async function setTimeEntryNote(
 // Log a completed block of time. `date` is an ISO date string; the entry's
 // start and end are both set to it (it is not a real interval).
 export async function logTime(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   input: { hours: number; minutes: number; date: string; description?: string }
 ): Promise<{ ok: true } | { error: string }> {
@@ -257,6 +288,14 @@ export async function logTime(
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
 
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
@@ -292,7 +331,7 @@ export async function logTime(
     seconds: durationSeconds,
     note: description,
   });
-  revalidateList(workspaceId, spaceId, listId, taskId);
+  revalidateList(ctx);
   return { ok: true };
 }
 
@@ -301,10 +340,10 @@ export async function logTime(
 // Delete a time entry. Allowed for its author, or a user with full access
 // (owner/admin/space full-access). No activity log — keeps the feed quiet.
 export async function deleteTimeEntry(
-  workspaceId: string,
-  spaceId: string,
-  listId: string,
-  taskId: string,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
+  _taskId: string,
   entryId: string
 ): Promise<{ ok: true } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -312,19 +351,18 @@ export async function deleteTimeEntry(
     return { error: "Unauthorized" };
   }
 
+  // The entry decides the task, and the task decides the location. The
+  // caller's workspace / space / list / task are ignored.
+  const found = await resolveEntryContext(entryId);
+  if ("error" in found) {
+    return found;
+  }
+  const { entry, ctx } = found;
+  const { workspaceId, spaceId, taskId } = ctx;
+
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
     return err;
-  }
-
-  const [entry] = await db
-    .select({ userId: timeEntry.userId })
-    .from(timeEntry)
-    .where(and(eq(timeEntry.id, entryId), eq(timeEntry.taskId, taskId)))
-    .limit(1);
-
-  if (!entry) {
-    return { error: "Time entry not found" };
   }
 
   if (entry.userId !== session.user.id) {
@@ -341,6 +379,6 @@ export async function deleteTimeEntry(
   await db
     .delete(timeEntry)
     .where(and(eq(timeEntry.id, entryId), eq(timeEntry.taskId, taskId)));
-  revalidateList(workspaceId, spaceId, listId, taskId);
+  revalidateList(ctx);
   return { ok: true };
 }

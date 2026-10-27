@@ -19,6 +19,7 @@ import {
 } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isMcpEnabled } from "@/lib/integration-settings";
 import {
   getAccessibleSpaceIds,
   getWorkspaceMembership,
@@ -111,6 +112,7 @@ export default async function WorkspaceLayout({
   // Limit + usage for the task-limit banner (usage is only counted when a
   // limit is set).
   const taskCapacity = await getWorkspaceCapacity(workspaceId);
+  const mcpEnabled = await isMcpEnabled();
 
   const [spaces, archivedSpaces] = await Promise.all([
     spaceIds.length > 0
@@ -363,6 +365,7 @@ export default async function WorkspaceLayout({
             }))}
             channels={channels}
             isPlatformAdmin={session.user.role === ADMIN_ROLE}
+            mcpEnabled={mcpEnabled}
             role={membership.role}
             spaces={spaces.map((s) => ({
               ...s,

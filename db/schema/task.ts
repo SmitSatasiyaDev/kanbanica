@@ -49,6 +49,9 @@ export const task = pgTable(
   (t) => [
     index("task_list_id_idx").on(t.listId),
     index("task_workspace_id_idx").on(t.workspaceId),
+    // Lookup by the human-readable task number inside a workspace (MCP tools).
+    // Non-unique on purpose: trashed or imported rows must never block a write.
+    index("task_workspace_seq_idx").on(t.workspaceId, t.seqNumber),
     index("task_parent_task_id_idx").on(t.parentTaskId),
     index("task_status_id_idx").on(t.statusId),
     index("task_pinned_to_list_idx").on(t.listId, t.isPinnedToList),

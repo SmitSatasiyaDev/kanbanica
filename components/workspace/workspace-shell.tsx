@@ -17,6 +17,7 @@ import {
   FolderIcon,
   GearIcon,
   KeyboardIcon,
+  KeyIcon,
   LightningIcon,
   ListChecksIcon,
   ListIcon,
@@ -143,6 +144,8 @@ interface WorkspaceShellProps {
   children: React.ReactNode;
   /** Platform admin (user.role === "admin") — unlocks the Admin Console link. */
   isPlatformAdmin?: boolean;
+  /** MCP / API tokens platform switch — shows the "API tokens & MCP" menu item. */
+  mcpEnabled?: boolean;
   role: string;
   spaces: SpaceSummary[];
   /** Workspace task limit + usage (limit null = unlimited). Drives the banner. */
@@ -173,6 +176,7 @@ function WorkspaceShellInner({
   channels: _channels,
   role,
   isPlatformAdmin = false,
+  mcpEnabled = false,
   taskCapacity,
   user,
 }: WorkspaceShellProps) {
@@ -1457,6 +1461,19 @@ function WorkspaceShellInner({
                     <BellIcon className="size-4 shrink-0 text-base-content/60" />
                     Notification settings
                   </Link>
+                  {mcpEnabled && (
+                    <Link
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-base-200"
+                      href={`/${workspace.id}/api-tokens`}
+                      onClick={() => {
+                        setProfileOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <KeyIcon className="size-4 shrink-0 text-base-content/60" />
+                      API tokens & MCP
+                    </Link>
+                  )}
                   {/* Trash holds workspace-wide deleted tasks — owner/admin only. */}
                   {isAdmin && (
                     <Link

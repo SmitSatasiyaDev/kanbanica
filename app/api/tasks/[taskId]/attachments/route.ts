@@ -1,17 +1,28 @@
-import { createId } from "@paralleldrive/cuid2";
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
-import { list, task, taskAssignee, taskAttachment } from "@/db/schema";
-import { writeActivityLog } from "@/lib/activity-log";
+import { list, task, taskAttachment } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { createNotifications } from "@/lib/notifications/create-notification";
-import { canAccessSpace, getWorkspaceMembership } from "@/lib/permissions";
+import { canAccessSpace } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
-import { refreshWorkspace } from "@/lib/realtime/refresh";
+import { webActor } from "@/lib/services/actor";
+import {
+  type AttachmentErrorCode,
+  checkUploadAccess,
+  uploadAttachment,
+} from "@/lib/services/attachment-service";
 import { MAX_FILE_SIZE, storage } from "@/lib/storage";
 import { notDeleted } from "@/lib/task-visibility";
+
+// HTTP status for each service error code.
+const ERROR_STATUS: Record<AttachmentErrorCode, number> = {
+  not_found: 404,
+  forbidden: 403,
+  read_only: 403,
+  too_large: 413,
+  storage: 500,
+};
 
 async function resolveTask(taskId: string) {
   const [row] = await db
@@ -96,23 +107,16 @@ export async function POST(
   }
 
   const { taskId } = await params;
-  const ctx = await resolveTask(taskId);
-  if (!ctx) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
-  }
+  const actor = webActor(session);
 
-  const [membership, accessible] = await Promise.all([
-    getWorkspaceMembership(session.user.id, ctx.workspaceId),
-    canAccessSpace(session.user.id, ctx.workspaceId, ctx.spaceId),
-  ]);
-  if (!membership || !accessible) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Only Edit / Full Access / Admin / Owner can upload
-  const role = membership.role;
-  if (role === "GUEST") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Check access before reading the body, so a refused user never makes us
+  // buffer the file. The service checks again when it stores the file.
+  const access = await checkUploadAccess(actor, taskId);
+  if ("error" in access) {
+    return NextResponse.json(
+      { error: access.error },
+      { status: ERROR_STATUS[access.code] }
+    );
   }
 
   let formData: FormData;
@@ -134,7 +138,6 @@ export async function POST(
     );
   }
 
-  const mimeType = file.type || "application/octet-stream";
   const commentId = formData.get("commentId");
   // Inline files embedded in a comment/note body (images render as pictures,
   // other types as download chips). They render inside the note and are excluded
@@ -143,78 +146,21 @@ export async function POST(
   // as a regular attachment — only the shared 10 MB size limit applies (above).
   const isInline = formData.get("inline") === "true";
 
-  const attachmentId = createId();
-  const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storageKey = `attachments/${ctx.workspaceId}/${taskId}/${attachmentId}/${safeFileName}`;
-
-  // Store the original bytes as-is — no re-encoding, so pasted screenshots stay
-  // pixel-perfect.
-  const buffer = await file.arrayBuffer();
-  await storage.upload(storageKey, buffer, { contentType: mimeType });
-
-  const now = new Date();
-  await db.insert(taskAttachment).values({
-    id: attachmentId,
-    taskId,
-    commentId: typeof commentId === "string" && commentId ? commentId : null,
-    uploadedBy: session.user.id,
+  const res = await uploadAttachment(actor, taskId, {
+    bytes: new Uint8Array(await file.arrayBuffer()),
     fileName: file.name,
-    fileUrl: storageKey,
-    fileSize: file.size,
-    mimeType,
-    isInline,
-    createdAt: now,
+    mimeType: file.type || "application/octet-stream",
+    inline: isInline,
+    commentId: typeof commentId === "string" && commentId ? commentId : null,
   });
-
-  // Inline note images skip the activity-log row + assignee notification — the
-  // parent note's comment_added notification is the single event.
-  if (!isInline) {
-    void writeActivityLog(taskId, session.user.id, "attachment_uploaded", {
-      file_name: file.name,
-      file_size: file.size,
-    });
-
-    // Notify assignees (other than the uploader) that a file was attached.
-    const assignees = await db
-      .select({ userId: taskAssignee.userId })
-      .from(taskAssignee)
-      .where(eq(taskAssignee.taskId, taskId));
-    const recipientIds = assignees
-      .map((a) => a.userId)
-      .filter((id) => id !== session.user.id);
-    if (recipientIds.length > 0) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId: ctx.workspaceId,
-        actorId: session.user.id,
-        recipientIds,
-        triggerType: "attachment_added",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `${actorName} attached a file to "${ctx.title}"`,
-        body: file.name,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-
-    void refreshWorkspace(ctx.workspaceId, undefined, { taskId });
+  if ("error" in res) {
+    return NextResponse.json(
+      { error: res.error },
+      { status: ERROR_STATUS[res.code] }
+    );
   }
 
-  const url = await storage.url(storageKey);
+  const url = await storage.url(res.attachment.key);
 
-  return NextResponse.json({
-    attachment: {
-      id: attachmentId,
-      taskId,
-      commentId: typeof commentId === "string" && commentId ? commentId : null,
-      uploadedBy: session.user.id,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType,
-      isInline,
-      key: storageKey,
-      createdAt: now,
-      url,
-    },
-  });
+  return NextResponse.json({ attachment: { ...res.attachment, url } });
 }

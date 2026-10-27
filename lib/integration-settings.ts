@@ -191,6 +191,15 @@ export async function areNotificationEmailsEnabled(): Promise<boolean> {
   return row?.notificationEmailsEnabled ?? true;
 }
 
+/**
+ * Platform-wide switch for MCP / personal API token access. True when the row
+ * was never written. Read per request so a change applies at once.
+ */
+export async function isMcpEnabled(): Promise<boolean> {
+  const row = await getRow();
+  return row?.mcpEnabled ?? true;
+}
+
 /** DB override (when set) wins; otherwise the `.env` flag. Pure, for testing. */
 export function resolvePasswordSignup(
   dbValue: boolean | null | undefined,
@@ -216,6 +225,7 @@ export interface IntegrationSettingsSummary {
    * the admin needs to see what is actually in force. */
   auth: { passwordSignupEnabled: boolean };
   google: { clientId: string; hasClientSecret: boolean };
+  mcp: { enabled: boolean };
   notifications: { emailsEnabled: boolean };
   smtp: {
     host: string;
@@ -256,6 +266,7 @@ export async function getIntegrationSettingsSummary(): Promise<IntegrationSettin
         env.ALLOW_PASSWORD_SIGNUP
       ),
     },
+    mcp: { enabled: row?.mcpEnabled ?? true },
     notifications: { emailsEnabled: row?.notificationEmailsEnabled ?? true },
     smtp: {
       host: row?.smtpHost ?? "",

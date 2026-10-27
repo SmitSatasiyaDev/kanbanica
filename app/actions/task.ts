@@ -6,14 +6,12 @@ import {
   asc,
   desc,
   eq,
+  getTableColumns,
   gt,
   inArray,
   isNull,
-  notInArray,
-  or,
 } from "drizzle-orm";
 import { headers } from "next/headers";
-import { spaceRecipientUserIds } from "@/app/actions/space";
 import {
   activityLog,
   checklist,
@@ -22,28 +20,18 @@ import {
   listStatus,
   space,
   sprint,
-  tag,
   task,
   taskAssignee,
-  taskAttachment,
   taskDependency,
-  taskDescriptionSnapshot,
   taskSprint,
   taskTag,
   taskWatcher,
-  timeEntry,
   user,
   workspaceMember,
 } from "@/db/schema";
 import { writeActivityLog } from "@/lib/activity-log";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { isOptionalDay } from "@/lib/due-date";
-import {
-  extractInlineAttachmentIds,
-  extractMentionIds,
-  toTiptapDoc,
-} from "@/lib/notes";
 import {
   type BulkNotifyTaskInfo,
   createBulkNotifications,
@@ -56,7 +44,19 @@ import {
   requireViewAccess,
 } from "@/lib/permissions";
 import { refreshWorkspace } from "@/lib/realtime/refresh";
-import { storage } from "@/lib/storage";
+import { webActor } from "@/lib/services/actor";
+import {
+  effectiveTaskSpaceId,
+  resolveTaskContext,
+} from "@/lib/services/task-context";
+import {
+  assigneeAndWatcherIds,
+  createSubtask as createSubtaskCore,
+  createTask as createTaskCore,
+  loadTaskDetail,
+  setTaskStatus,
+  updateTask as updateTaskCore,
+} from "@/lib/services/task-service";
 import { notDeleted } from "@/lib/task-visibility";
 import { softDeleteTasks } from "@/lib/trash";
 import { requireTaskCapacity } from "@/lib/workspace-limits";
@@ -79,31 +79,6 @@ async function requireFullAccess(
     return { error: "Forbidden" };
   }
   return null;
-}
-
-// User-facing priority labels for notification messages.
-const PRIORITY_LABELS: Record<string, string> = {
-  NONE: "No Priority",
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-  URGENT: "Urgent",
-};
-
-// Deduped set of a task's assignees + watchers — the standard recipient set for
-// task-level change notifications (priority, moved, etc.).
-async function assigneeAndWatcherIds(taskId: string): Promise<string[]> {
-  const [a, w] = await Promise.all([
-    db
-      .select({ userId: taskAssignee.userId })
-      .from(taskAssignee)
-      .where(eq(taskAssignee.taskId, taskId)),
-    db
-      .select({ userId: taskWatcher.userId })
-      .from(taskWatcher)
-      .where(eq(taskWatcher.taskId, taskId)),
-  ]);
-  return [...new Set([...a, ...w].map((r) => r.userId))];
 }
 
 // ─── Revalidation helper ─────────────────────────────────────────────────────
@@ -158,190 +133,21 @@ export async function createTask(
     return { error: "Unauthorized" };
   }
 
-  const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
-  if (err) {
-    return err;
-  }
-
-  const title = data.title.trim();
-  if (!title) {
-    return { error: "Task title is required" };
-  }
-  if (!(isOptionalDay(data.dueDateStart) && isOptionalDay(data.dueDateEnd))) {
-    return { error: "Invalid due date" };
-  }
-
-  let statusId: string | undefined = data.statusId || undefined;
-  const effectiveListId = listId || null;
-
-  if (effectiveListId) {
-    const [currentList] = await db
-      .select({ id: list.id })
-      .from(list)
-      .where(
-        and(
-          eq(list.id, effectiveListId),
-          eq(list.spaceId, spaceId),
-          eq(list.isArchived, false)
-        )
-      )
-      .limit(1);
-    if (!currentList) {
-      return { error: "List not found or archived" };
-    }
-
-    if (!statusId) {
-      const [firstStatus] = await db
-        .select({ id: listStatus.id })
-        .from(listStatus)
-        .where(
-          and(
-            eq(listStatus.listId, effectiveListId),
-            eq(listStatus.type, "OPEN")
-          )
-        )
-        .orderBy(asc(listStatus.orderIndex))
-        .limit(1);
-
-      if (firstStatus) {
-        statusId = firstStatus.id;
-      } else {
-        const [anyStatus] = await db
-          .select({ id: listStatus.id })
-          .from(listStatus)
-          .where(eq(listStatus.listId, effectiveListId))
-          .orderBy(asc(listStatus.orderIndex))
-          .limit(1);
-        if (!anyStatus) {
-          return { error: "List has no statuses" };
-        }
-        statusId = anyStatus.id;
-      }
-    }
-  }
-
-  const taskId = createId();
-
-  const assigneeIds = [...new Set(data.assigneeIds ?? [])];
-  const tagIds = [...new Set(data.tagIds ?? [])];
-
-  const created = await db.transaction(async (tx) => {
-    // Workspace task-limit gate + seq reservation (locks the workspace row).
-    const capacity = await requireTaskCapacity(tx, workspaceId, 1);
-    if ("error" in capacity) {
-      return capacity;
-    }
-    const taskSeq = capacity.seqBase + 1;
-
-    await tx.insert(task).values({
-      id: taskId,
-      seqNumber: taskSeq,
-      workspaceId,
-      spaceId,
-      listId: effectiveListId,
-      statusId: statusId ?? null,
-      title,
-      description: (data.description as Record<string, unknown>) ?? null,
-      priority: data.priority ?? "NONE",
-      dueDateStart: data.dueDateStart ?? null,
-      dueDateEnd: data.dueDateEnd ?? null,
-      reporterId: session.user.id,
-      orderIndex: taskSeq * 1000,
-    });
-    // Auto-watch: creator + assignees
-    const watcherIds = [...new Set([session.user.id, ...assigneeIds])];
-    await tx
-      .insert(taskWatcher)
-      .values(watcherIds.map((userId) => ({ taskId, userId })))
-      .onConflictDoNothing();
-
-    if (assigneeIds.length > 0) {
-      await tx
-        .insert(taskAssignee)
-        .values(assigneeIds.map((userId) => ({ taskId, userId })))
-        .onConflictDoNothing();
-    }
-
-    if (tagIds.length > 0) {
-      await tx
-        .insert(taskTag)
-        .values(tagIds.map((tagId) => ({ taskId, tagId })))
-        .onConflictDoNothing();
-    }
-    return null;
+  // The rules (access, title, dates, task limit, notifications) live in the
+  // shared service, which the MCP endpoint uses too.
+  return createTaskCore(webActor(session), {
+    ...data,
+    workspaceId,
+    spaceId,
+    listId,
   });
-  if (created) {
-    return created;
-  }
-
-  await writeActivityLog(taskId, session.user.id, "task_created", { title });
-
-  const actorName = session.user.name ?? session.user.email ?? "Someone";
-
-  // Notify assignees (skip the creator assigning themselves).
-  const notifyIds = assigneeIds.filter((id) => id !== session.user.id);
-  if (notifyIds.length > 0) {
-    createNotifications({
-      workspaceId,
-      actorId: session.user.id,
-      recipientIds: notifyIds,
-      triggerType: "task_assigned",
-      entityType: "TASK",
-      entityId: taskId,
-      title: `${actorName} assigned you to "${title}"`,
-      muteCheckEntityIds: [taskId],
-    });
-  }
-
-  // Task created → notify the project (space) members so the team sees new work.
-  // Exclude assignees (they already got task_assigned) and the creator (the actor
-  // is auto-excluded by createNotifications). Uses the shared project-recipient
-  // helper so public/private/guest visibility is respected. Users who find this
-  // noisy can turn off "Task created" in notification settings.
-  const projectMemberIds = await spaceRecipientUserIds(workspaceId, spaceId);
-  const createdRecipients = projectMemberIds.filter(
-    (id) => !assigneeIds.includes(id)
-  );
-  if (createdRecipients.length > 0) {
-    createNotifications({
-      workspaceId,
-      actorId: session.user.id,
-      recipientIds: createdRecipients,
-      triggerType: "task_created",
-      entityType: "TASK",
-      entityId: taskId,
-      title: `${actorName} created "${title}"`,
-      muteCheckEntityIds: [taskId],
-    });
-  }
-
-  // @mentions in the initial description → notify mentioned users (actor
-  // auto-excluded). Same trigger/parser as edited-description mentions.
-  const descMentions = extractMentionIds(data.description);
-  if (descMentions.length > 0) {
-    createNotifications({
-      workspaceId,
-      actorId: session.user.id,
-      recipientIds: descMentions,
-      triggerType: "mention_description",
-      entityType: "TASK",
-      entityId: taskId,
-      title: `${actorName} mentioned you in the description of "${title}"`,
-      muteCheckEntityIds: [taskId],
-    });
-  }
-
-  if (listId) {
-    revalidateList(workspaceId, spaceId, listId, taskId);
-  }
-  return { taskId };
 }
 
 // ─── Get task detail ─────────────────────────────────────────────────────────
 
 export async function getTaskDetail(
-  workspaceId: string,
-  spaceId: string,
+  _workspaceId: string,
+  _spaceId: string,
   taskId: string
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -349,257 +155,14 @@ export async function getTaskDetail(
     return { error: "Unauthorized" };
   }
 
-  const permErr = await requireViewAccess(
-    session.user.id,
-    workspaceId,
-    spaceId
-  );
-  if (permErr) {
-    return permErr;
+  // The caller's workspace / space are ignored: the real location comes from
+  // the task row, so access to one project never opens a task in another.
+  const detail = await loadTaskDetail(webActor(session), taskId);
+  if ("error" in detail) {
+    return { error: detail.error };
   }
-
-  // Whether the viewer can edit (add/remove dependencies). View-only users see
-  // dependencies but no add/remove controls; the server still enforces this.
-  const permission = await getSpacePermission(
-    session.user.id,
-    workspaceId,
-    spaceId
-  );
-  const canEdit = permission !== null && hasPermissionLevel(permission, "edit");
-
-  const [t] = await db
-    .select()
-    .from(task)
-    .where(and(eq(task.id, taskId), notDeleted()))
-    .limit(1);
-  if (!t) {
-    return { error: "Task not found" };
-  }
-
-  const [
-    assignees,
-    watchers,
-    tags,
-    checklists,
-    blockedBy,
-    blocks,
-    timeEntries,
-    statuses,
-    snapshot,
-    subtasks,
-    parentTaskInfo,
-  ] = await Promise.all([
-    db
-      .select({
-        userId: taskAssignee.userId,
-        name: user.name,
-        email: user.email,
-        image: user.image,
-      })
-      .from(taskAssignee)
-      .leftJoin(user, eq(user.id, taskAssignee.userId))
-      .where(eq(taskAssignee.taskId, taskId)),
-
-    db
-      .select({
-        userId: taskWatcher.userId,
-        name: user.name,
-        email: user.email,
-        image: user.image,
-      })
-      .from(taskWatcher)
-      .leftJoin(user, eq(user.id, taskWatcher.userId))
-      .where(eq(taskWatcher.taskId, taskId)),
-
-    db
-      .select({ id: tag.id, name: tag.name, color: tag.color })
-      .from(taskTag)
-      .innerJoin(tag, eq(taskTag.tagId, tag.id))
-      .where(eq(taskTag.taskId, taskId)),
-
-    db
-      .select()
-      .from(checklist)
-      .where(eq(checklist.taskId, taskId))
-      .orderBy(asc(checklist.orderIndex))
-      .then(async (cls) => {
-        if (cls.length === 0) {
-          return [];
-        }
-        const items = await db
-          .select()
-          .from(checklistItem)
-          .where(
-            inArray(
-              checklistItem.checklistId,
-              cls.map((c) => c.id)
-            )
-          )
-          .orderBy(asc(checklistItem.orderIndex));
-        return cls.map((c) => ({
-          ...c,
-          items: items.filter((i) => i.checklistId === c.id),
-        }));
-      }),
-
-    // "Blocked by" — tasks this task depends on (stored: this → dependsOn)
-    db
-      .select({
-        id: taskDependency.id,
-        taskId: task.id,
-        seqNumber: task.seqNumber,
-        title: task.title,
-        statusName: listStatus.name,
-        statusColor: listStatus.color,
-        statusType: listStatus.type,
-        spaceId: task.spaceId,
-        spaceName: space.name,
-        listId: task.listId,
-        listName: list.name,
-      })
-      .from(taskDependency)
-      .innerJoin(task, eq(taskDependency.dependsOnTaskId, task.id))
-      .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-      .leftJoin(space, eq(space.id, task.spaceId))
-      .leftJoin(list, eq(list.id, task.listId))
-      .where(and(eq(taskDependency.taskId, taskId), notDeleted())),
-
-    // "Blocks" — tasks that depend on this task (reverse edge, generated in UI)
-    db
-      .select({
-        id: taskDependency.id,
-        taskId: task.id,
-        seqNumber: task.seqNumber,
-        title: task.title,
-        statusName: listStatus.name,
-        statusColor: listStatus.color,
-        statusType: listStatus.type,
-        spaceId: task.spaceId,
-        spaceName: space.name,
-        listId: task.listId,
-        listName: list.name,
-      })
-      .from(taskDependency)
-      .innerJoin(task, eq(taskDependency.taskId, task.id))
-      .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-      .leftJoin(space, eq(space.id, task.spaceId))
-      .leftJoin(list, eq(list.id, task.listId))
-      .where(and(eq(taskDependency.dependsOnTaskId, taskId), notDeleted())),
-
-    // Time entries (seconds-based). Running rows have `endTime`/`durationSeconds`
-    // NULL. Newest-first; joined to the user for the history list.
-    db
-      .select({
-        id: timeEntry.id,
-        userId: timeEntry.userId,
-        startTime: timeEntry.startTime,
-        endTime: timeEntry.endTime,
-        durationSeconds: timeEntry.durationSeconds,
-        description: timeEntry.description,
-        userName: user.name,
-        userImage: user.image,
-      })
-      .from(timeEntry)
-      .leftJoin(user, eq(user.id, timeEntry.userId))
-      .where(eq(timeEntry.taskId, taskId))
-      .orderBy(desc(timeEntry.startTime)),
-
-    t.listId
-      ? db
-          .select()
-          .from(listStatus)
-          .where(eq(listStatus.listId, t.listId))
-          .orderBy(asc(listStatus.orderIndex))
-      : Promise.resolve([]),
-
-    db
-      .select()
-      .from(taskDescriptionSnapshot)
-      .where(eq(taskDescriptionSnapshot.taskId, taskId))
-      .limit(1)
-      .then((r) => r[0] ?? null),
-
-    db
-      .select({
-        id: task.id,
-        seqNumber: task.seqNumber,
-        title: task.title,
-        priority: task.priority,
-        statusId: task.statusId,
-        listId: task.listId,
-        dueDateStart: task.dueDateStart,
-        dueDateEnd: task.dueDateEnd,
-        orderIndex: task.orderIndex,
-        statusName: listStatus.name,
-        statusColor: listStatus.color,
-        statusType: listStatus.type,
-      })
-      .from(task)
-      .leftJoin(listStatus, eq(listStatus.id, task.statusId))
-      .where(
-        and(
-          eq(task.parentTaskId, taskId),
-          eq(task.isArchived, false),
-          notDeleted()
-        )
-      )
-      .orderBy(asc(task.orderIndex)),
-
-    t.parentTaskId
-      ? db
-          .select({ id: task.id, title: task.title, seqNumber: task.seqNumber })
-          .from(task)
-          .where(eq(task.id, t.parentTaskId))
-          .limit(1)
-          .then((r) => r[0] ?? null)
-      : Promise.resolve(null),
-  ]);
-
-  // Attach each subtask's assignees (one grouped query for all subtask ids) so
-  // the subtask rows can show + edit assignees inline.
-  const subtaskIds = subtasks.map((s) => s.id);
-  const subtaskAssigneeRows =
-    subtaskIds.length > 0
-      ? await db
-          .select({
-            taskId: taskAssignee.taskId,
-            userId: taskAssignee.userId,
-            name: user.name,
-            email: user.email,
-            image: user.image,
-          })
-          .from(taskAssignee)
-          .leftJoin(user, eq(user.id, taskAssignee.userId))
-          .where(inArray(taskAssignee.taskId, subtaskIds))
-      : [];
-  const subtasksWithAssignees = subtasks.map((s) => ({
-    ...s,
-    assignees: subtaskAssigneeRows
-      .filter((a) => a.taskId === s.id)
-      .map((a) => ({
-        userId: a.userId,
-        name: a.name,
-        email: a.email,
-        image: a.image,
-      })),
-  }));
-
-  return {
-    task: t,
-    assignees,
-    watchers,
-    tags,
-    checklists,
-    blockedBy,
-    blocks,
-    timeEntries,
-    statuses,
-    snapshot,
-    subtasks: subtasksWithAssignees,
-    parentTask: parentTaskInfo,
-    canEdit,
-    currentUserId: session.user.id,
-  };
+  const { ok: _ok, ...rest } = detail;
+  return { ...rest, currentUserId: session.user.id };
 }
 
 // ─── Get workspace members (for assignee picker) ──────────────────────────────
@@ -634,9 +197,9 @@ export async function getWorkspaceMembers(workspaceId: string) {
 // ─── Update task (title, priority, description, due dates) ───────────────────
 
 export async function updateTask(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   data: {
     title?: string;
@@ -652,221 +215,17 @@ export async function updateTask(
     return { error: "Unauthorized" };
   }
 
-  const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
-  if (err) {
-    return err;
-  }
-
-  if (!(isOptionalDay(data.dueDateStart) && isOptionalDay(data.dueDateEnd))) {
-    return { error: "Invalid due date" };
-  }
-
-  const [existing] = await db
-    .select({
-      title: task.title,
-      priority: task.priority,
-      description: task.description,
-      dueDateEnd: task.dueDateEnd,
-    })
-    .from(task)
-    .where(
-      and(
-        eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId),
-        notDeleted()
-      )
-    )
-    .limit(1);
-  if (!existing) {
-    return { error: "Task not found" };
-  }
-
-  const updates: Partial<typeof task.$inferInsert> = { updatedAt: new Date() };
-  const logs: Array<() => Promise<void>> = [];
-
-  if (data.title !== undefined && data.title.trim() !== existing.title) {
-    updates.title = data.title.trim();
-    logs.push(() =>
-      writeActivityLog(taskId, session.user.id, "title_changed", {
-        from: existing.title,
-        to: updates.title,
-      })
-    );
-  }
-
-  if (data.priority !== undefined && data.priority !== existing.priority) {
-    updates.priority = data.priority;
-    logs.push(() =>
-      writeActivityLog(taskId, session.user.id, "priority_changed", {
-        from: existing.priority,
-        to: data.priority,
-      })
-    );
-  }
-
-  if (data.description !== undefined) {
-    // Snapshot the previous description before overwriting
-    if (existing.description) {
-      await db
-        .insert(taskDescriptionSnapshot)
-        .values({
-          id: createId(),
-          taskId,
-          content: existing.description as Record<string, unknown>,
-          savedBy: session.user.id,
-          savedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: taskDescriptionSnapshot.taskId,
-          set: {
-            content: existing.description as Record<string, unknown>,
-            savedBy: session.user.id,
-            savedAt: new Date(),
-          },
-        });
-    }
-    updates.description = data.description as Record<string, unknown>;
-    logs.push(() =>
-      writeActivityLog(taskId, session.user.id, "description_updated")
-    );
-
-    // Delete the storage object + row for any inline image removed from the
-    // description (isInline + no commentId; mirrors editComment). Only runs
-    // once the new description actually parses — treating an unparseable
-    // JSON string as "no images kept" previously wiped every image on save.
-    const newDescDoc = toTiptapDoc(data.description);
-    if (newDescDoc !== null && newDescDoc !== undefined) {
-      const keptIds = extractInlineAttachmentIds(newDescDoc);
-      const removed = await db
-        .select({ id: taskAttachment.id, fileUrl: taskAttachment.fileUrl })
-        .from(taskAttachment)
-        .where(
-          and(
-            eq(taskAttachment.taskId, taskId),
-            eq(taskAttachment.isInline, true),
-            isNull(taskAttachment.commentId),
-            ...(keptIds.length > 0
-              ? [notInArray(taskAttachment.id, keptIds)]
-              : [])
-          )
-        );
-      if (removed.length > 0) {
-        await Promise.all(
-          removed.map(async (a) => {
-            try {
-              await storage.delete(a.fileUrl);
-            } catch {
-              // Best-effort: a missing storage file must not block the update.
-            }
-          })
-        );
-        await db.delete(taskAttachment).where(
-          inArray(
-            taskAttachment.id,
-            removed.map((a) => a.id)
-          )
-        );
-      }
-    }
-  }
-
-  if (data.dueDateStart !== undefined) {
-    updates.dueDateStart = data.dueDateStart;
-  }
-  if (data.dueDateEnd !== undefined) {
-    updates.dueDateEnd = data.dueDateEnd;
-  }
-  if (data.timeEstimate !== undefined) {
-    updates.timeEstimate = data.timeEstimate;
-  }
-
-  if (Object.keys(updates).length > 1) {
-    await db.update(task).set(updates).where(eq(task.id, taskId));
-  }
-
-  await Promise.all(logs.map((fn) => fn()));
-
-  // Notify watchers of due date change
-  // Only when the due day actually changed (null-safe) — matches the
-  // priority guard, so re-saving the same date sends nothing.
-  const dueDateEndChanged =
-    data.dueDateEnd !== undefined &&
-    (data.dueDateEnd ?? null) !== (existing.dueDateEnd ?? null);
-  if (dueDateEndChanged) {
-    const dueDateWatchers = await db
-      .select({ userId: taskWatcher.userId })
-      .from(taskWatcher)
-      .where(eq(taskWatcher.taskId, taskId));
-    const dueDateWatcherIds = dueDateWatchers.map((w) => w.userId);
-    if (dueDateWatcherIds.length > 0) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds: dueDateWatcherIds,
-        triggerType: "task_due_date_changed",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `${actorName} changed due date of "${existing.title}"`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  // Notify assignees + watchers when the priority actually changed.
-  if (data.priority !== undefined && data.priority !== existing.priority) {
-    const recipientIds = await assigneeAndWatcherIds(taskId);
-    if (recipientIds.length > 0) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds,
-        triggerType: "task_priority_changed",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `${actorName} changed priority of "${existing.title}" to ${PRIORITY_LABELS[data.priority]}`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  // Mention in description → notify only NEWLY added mentions (compare old vs
-  // new). Reuses the same mention parser + trigger as comments.
-  if (data.description !== undefined) {
-    const oldMentions = extractMentionIds(existing.description);
-    const addedMentions = extractMentionIds(data.description).filter(
-      (id) => !oldMentions.includes(id)
-    );
-    if (addedMentions.length > 0) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds: addedMentions,
-        triggerType: "mention_description",
-        entityType: "TASK",
-        entityId: taskId,
-        title: `${actorName} mentioned you in the description of "${existing.title}"`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  if (listId) {
-    revalidateList(workspaceId, spaceId, listId, taskId);
-  } else {
-    revalidateSpace(workspaceId, spaceId, taskId);
-  }
-  return { ok: true };
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row (open panels can hold stale ids after a move).
+  return updateTaskCore(webActor(session), taskId, data);
 }
 
 // ─── Update task status ───────────────────────────────────────────────────────
 
 export async function updateTaskStatus(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string,
   statusId: string
 ): Promise<{ ok: true } | { error: string }> {
@@ -875,99 +234,14 @@ export async function updateTaskStatus(
     return { error: "Unauthorized" };
   }
 
-  const permErr = await requireViewAccess(
-    session.user.id,
-    workspaceId,
-    spaceId
-  );
-  if (permErr) {
-    return permErr;
-  }
-
-  const [existing] = await db
-    .select({ statusId: task.statusId, title: task.title })
-    .from(task)
-    .where(and(eq(task.id, taskId), notDeleted()))
-    .limit(1);
-  if (!existing) {
-    return { error: "Task not found" };
-  }
-
-  await db
-    .update(task)
-    .set({ statusId, updatedAt: new Date() })
-    .where(
-      and(
-        eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId)
-      )
-    );
-
-  // Only log + notify when the status actually changed — matches the priority
-  // guard, so re-saving the same status (e.g. dropping on the same column)
-  // doesn't spam the activity feed or watchers.
-  const statusChanged = statusId !== existing.statusId;
-  if (statusChanged) {
-    // Resolve the old + new status names once. They're stored as a snapshot in
-    // the activity log (a status can later be renamed or deleted) and reused for
-    // the watcher notification. The activity feed reads `from_status_name` /
-    // `to_status_name` — without them it renders "—".
-    const statusIds = [existing.statusId, statusId].filter((v): v is string =>
-      Boolean(v)
-    );
-    const statusRows = statusIds.length
-      ? await db
-          .select({
-            id: listStatus.id,
-            name: listStatus.name,
-            type: listStatus.type,
-          })
-          .from(listStatus)
-          .where(inArray(listStatus.id, statusIds))
-      : [];
-    const fromStatus =
-      statusRows.find((s) => s.id === existing.statusId) ?? null;
-    const newStatus = statusRows.find((s) => s.id === statusId) ?? null;
-
-    await writeActivityLog(taskId, session.user.id, "status_changed", {
-      from: existing.statusId,
-      to: statusId,
-      from_status_name: fromStatus?.name ?? null,
-      to_status_name: newStatus?.name ?? null,
-    });
-
-    // Notify watchers of status change
-    const taskWatchers = await db
-      .select({ userId: taskWatcher.userId })
-      .from(taskWatcher)
-      .where(eq(taskWatcher.taskId, taskId));
-
-    const watcherIds = taskWatchers.map((w) => w.userId);
-    if (watcherIds.length > 0) {
-      const actorName = session.user.name ?? session.user.email ?? "Someone";
-      createNotifications({
-        workspaceId,
-        actorId: session.user.id,
-        recipientIds: watcherIds,
-        triggerType:
-          newStatus?.type === "CLOSED"
-            ? "task_completed"
-            : "task_status_changed",
-        entityType: "TASK",
-        entityId: taskId,
-        title:
-          newStatus?.type === "CLOSED"
-            ? `${actorName} completed "${existing.title}"`
-            : `${actorName} changed status of "${existing.title}" to "${newStatus?.name ?? statusId}"`,
-        muteCheckEntityIds: [taskId],
-      });
-    }
-  }
-
-  if (listId) {
-    revalidateList(workspaceId, spaceId, listId, taskId);
-  } else {
-    revalidateSpace(workspaceId, spaceId, taskId);
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row (open panels can hold stale ids after a move). Any status
+  // of a list in the task's own space is accepted (Sprint board).
+  const res = await setTaskStatus(webActor(session), taskId, statusId, {
+    sameListOnly: false,
+  });
+  if ("error" in res) {
+    return { error: res.error };
   }
   return { ok: true };
 }
@@ -975,15 +249,23 @@ export async function updateTaskStatus(
 // ─── Delete task ──────────────────────────────────────────────────────────────
 
 export async function deleteTask(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ ok: true } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row (open panels can hold stale ids after a move).
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId, listId } = ctx;
 
   const permErr = await requireFullAccess(
     session.user.id,
@@ -996,23 +278,6 @@ export async function deleteTask(
 
   // Soft delete: the task moves to Trash (Trash) and can be
   // restored. Notify assignees + watchers that the task was deleted.
-  const [existing] = await db
-    .select({ title: task.title })
-    .from(task)
-    .where(
-      and(
-        eq(task.id, taskId),
-        eq(task.workspaceId, workspaceId),
-        // Some tasks (e.g. the onboarding sample) have no spaceId.
-        or(isNull(task.spaceId), eq(task.spaceId, spaceId)),
-        listId ? eq(task.listId, listId) : isNull(task.listId),
-        notDeleted()
-      )
-    )
-    .limit(1);
-  if (!existing) {
-    return { error: "Task not found" };
-  }
   const [delAssignees, delWatchers] = await Promise.all([
     db
       .select({ userId: taskAssignee.userId })
@@ -1045,7 +310,7 @@ export async function deleteTask(
   // push click points at the list/workspace instead of a task page.
   if (deleteRecipientIds.length > 0) {
     const actorName = session.user.name ?? session.user.email ?? "Someone";
-    const taskTitle = existing?.title ?? "a task";
+    const taskTitle = ctx.title;
     createNotifications({
       workspaceId,
       actorId: session.user.id,
@@ -1074,15 +339,23 @@ export async function deleteTask(
 // ─── Archive / Unarchive task ─────────────────────────────────────────────────
 
 export async function archiveTask(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ ok: true } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row (open panels can hold stale ids after a move).
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId, listId } = ctx;
 
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
@@ -1100,12 +373,7 @@ export async function archiveTask(
       pinnedToListOrder: null,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId)
-      )
-    );
+    .where(and(eq(task.id, taskId), notDeleted()));
 
   await writeActivityLog(taskId, session.user.id, "task_archived");
   if (listId) {
@@ -1117,15 +385,23 @@ export async function archiveTask(
 }
 
 export async function unarchiveTask(
-  workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _workspaceId: string,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ ok: true } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The caller's workspace / space / list are ignored: the real location comes
+  // from the task row (open panels can hold stale ids after a move).
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId, listId } = ctx;
 
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
@@ -1135,12 +411,7 @@ export async function unarchiveTask(
   await db
     .update(task)
     .set({ isArchived: false, archivedAt: null, updatedAt: new Date() })
-    .where(
-      and(
-        eq(task.id, taskId),
-        listId ? eq(task.listId, listId) : isNull(task.listId)
-      )
-    );
+    .where(and(eq(task.id, taskId), notDeleted()));
 
   await writeActivityLog(taskId, session.user.id, "task_unarchived");
   if (listId) {
@@ -1155,8 +426,8 @@ export async function unarchiveTask(
 
 export async function duplicateTask(
   workspaceId: string,
-  spaceId: string,
-  listId: string | null,
+  _spaceId: string,
+  _listId: string | null,
   taskId: string
 ): Promise<{ taskId: string } | { error: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -1164,24 +435,36 @@ export async function duplicateTask(
     return { error: "Unauthorized" };
   }
 
+  // Load the source first: its own list decides which space the permission
+  // check runs against, not the space the caller sent. The list is LEFT joined
+  // because Sprint tasks have none.
+  const [sourceRow] = await db
+    .select({ ...getTableColumns(task), listSpaceId: list.spaceId })
+    .from(task)
+    .leftJoin(list, eq(task.listId, list.id))
+    .where(and(eq(task.id, taskId), notDeleted()))
+    .limit(1);
+  // Tasks never change workspace, so a different workspace id from the caller
+  // means a foreign task (its task limit is checked below).
+  if (!sourceRow || sourceRow.workspaceId !== workspaceId) {
+    return { error: "Task not found" };
+  }
+  const { listSpaceId, ...original } = sourceRow;
+  const spaceId =
+    listSpaceId ??
+    original.spaceId ??
+    (await resolveTaskContext(taskId))?.spaceId;
+  if (!spaceId) {
+    return { error: "Task not found" };
+  }
+
   const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
   if (err) {
     return err;
   }
 
-  const [original] = await db
-    .select()
-    .from(task)
-    .where(and(eq(task.id, taskId), notDeleted()))
-    .limit(1);
-  // The source must belong to the workspace the caller was authorised against
-  // (and whose task limit is checked below).
-  if (!original || original.workspaceId !== workspaceId) {
-    return { error: "Task not found" };
-  }
-
-  // The copy lives in the same list as the original (explicit override wins).
-  const targetListId = listId ?? original.listId;
+  // The copy lives in the same list as the original.
+  const targetListId = original.listId;
 
   // Subtasks (one level deep — nesting beyond that is disallowed) come along as
   // fresh tasks. Archived subtasks are left behind (the copy starts clean).
@@ -1426,9 +709,43 @@ export async function duplicateTask(
 
 // ─── Move task ────────────────────────────────────────────────────────────────
 
-export async function moveTask(
+// Validates the list a task is being moved INTO. It must exist, be active, sit
+// in an active project of the same workspace as the task, and the user needs
+// Edit on that target project too (not just on the source).
+async function resolveMoveTarget(
+  userId: string,
   workspaceId: string,
-  spaceId: string,
+  targetListId: string
+): Promise<{ spaceId: string } | { error: string }> {
+  const [target] = await db
+    .select({
+      spaceId: list.spaceId,
+      listArchived: list.isArchived,
+      spaceArchived: space.isArchived,
+      spaceWorkspaceId: space.workspaceId,
+    })
+    .from(list)
+    .innerJoin(space, eq(list.spaceId, space.id))
+    .where(eq(list.id, targetListId))
+    .limit(1);
+  if (
+    !target ||
+    target.listArchived ||
+    target.spaceArchived ||
+    target.spaceWorkspaceId !== workspaceId
+  ) {
+    return { error: "List not found" };
+  }
+  const err = await requireEditAccess(userId, workspaceId, target.spaceId);
+  if (err) {
+    return err;
+  }
+  return { spaceId: target.spaceId };
+}
+
+export async function moveTask(
+  _workspaceId: string,
+  _spaceId: string,
   taskId: string,
   targetListId: string
 ): Promise<{ ok: true } | { error: string }> {
@@ -1436,6 +753,15 @@ export async function moveTask(
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // The source side comes from the task row, not from the caller's ids. Edit
+  // permission is checked on the space the task is really in.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
+  const t = { listId: ctx.listId, statusId: ctx.statusId };
 
   const permErr = await requireEditAccess(
     session.user.id,
@@ -1446,13 +772,13 @@ export async function moveTask(
     return permErr;
   }
 
-  const [t] = await db
-    .select({ listId: task.listId, statusId: task.statusId })
-    .from(task)
-    .where(and(eq(task.id, taskId), notDeleted()))
-    .limit(1);
-  if (!t) {
-    return { error: "Task not found" };
+  const target = await resolveMoveTarget(
+    session.user.id,
+    workspaceId,
+    targetListId
+  );
+  if ("error" in target) {
+    return target;
   }
 
   // Find matching status in target list by name
@@ -1513,6 +839,8 @@ export async function moveTask(
     .update(task)
     .set({
       listId: targetListId,
+      // Keep the task's own space column in step with the list it now lives in.
+      spaceId: target.spaceId,
       statusId: newStatusId,
       isPinnedToList: false,
       pinnedToListBy: null,
@@ -1574,14 +902,21 @@ export async function moveTask(
 // ─── Get task activity ────────────────────────────────────────────────────────
 
 export async function getTaskActivity(
-  workspaceId: string,
-  spaceId: string,
+  _workspaceId: string,
+  _spaceId: string,
   taskId: string
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // Access is checked against the space the task is really in.
+  const ctx = await resolveTaskContext(taskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
 
   const permErr = await requireViewAccess(
     session.user.id,
@@ -1623,7 +958,7 @@ export async function getTaskActivity(
 
 export async function createSubtask(
   workspaceId: string,
-  spaceId: string,
+  _spaceId: string,
   parentTaskId: string,
   title: string
 ): Promise<{ taskId: string } | { error: string }> {
@@ -1632,112 +967,32 @@ export async function createSubtask(
     return { error: "Unauthorized" };
   }
 
-  const err = await requireEditAccess(session.user.id, workspaceId, spaceId);
-  if (err) {
-    return err;
-  }
-
-  const trimmedTitle = title.trim();
-  if (!trimmedTitle) {
-    return { error: "Subtask title is required" };
-  }
-
-  const [parentTask] = await db
-    .select({
-      id: task.id,
-      listId: task.listId,
-      workspaceId: task.workspaceId,
-      parentTaskId: task.parentTaskId,
-    })
-    .from(task)
-    .where(and(eq(task.id, parentTaskId), notDeleted()))
-    .limit(1);
-  // The parent must belong to the workspace the caller was authorised against
-  // (and whose task limit is checked below).
-  if (!parentTask || parentTask.workspaceId !== workspaceId) {
-    return { error: "Parent task not found" };
-  }
-  if (parentTask.parentTaskId) {
-    return { error: "Cannot nest subtasks more than one level" };
-  }
-
-  const listId = parentTask.listId;
-
-  let statusId: string | null = null;
-  if (listId) {
-    const [firstStatus] = await db
-      .select({ id: listStatus.id })
-      .from(listStatus)
-      .where(and(eq(listStatus.listId, listId), eq(listStatus.type, "OPEN")))
-      .orderBy(asc(listStatus.orderIndex))
-      .limit(1);
-
-    if (firstStatus) {
-      statusId = firstStatus.id;
-    } else {
-      const [anyStatus] = await db
-        .select({ id: listStatus.id })
-        .from(listStatus)
-        .where(eq(listStatus.listId, listId))
-        .orderBy(asc(listStatus.orderIndex))
-        .limit(1);
-      if (!anyStatus) {
-        return { error: "List has no statuses" };
-      }
-      statusId = anyStatus.id;
-    }
-  }
-
-  const taskId = createId();
-
-  const created = await db.transaction(async (tx) => {
-    // Workspace task-limit gate + seq reservation (locks the workspace row).
-    const capacity = await requireTaskCapacity(tx, workspaceId, 1);
-    if ("error" in capacity) {
-      return capacity;
-    }
-    const taskSeq = capacity.seqBase + 1;
-
-    await tx.insert(task).values({
-      id: taskId,
-      seqNumber: taskSeq,
-      workspaceId,
-      listId: listId ?? null,
-      statusId,
-      title: trimmedTitle,
-      priority: "NONE",
-      reporterId: session.user.id,
-      parentTaskId,
-      orderIndex: taskSeq * 1000,
-    });
-    return null;
-  });
-  if (created) {
-    return created;
-  }
-
-  await writeActivityLog(taskId, session.user.id, "subtask_created", {
-    title: trimmedTitle,
+  // The parent's own list decides the project; the caller's space is ignored.
+  return createSubtaskCore(webActor(session), {
     parentTaskId,
-  });
-  void refreshWorkspace(
     workspaceId,
-    listId ? [`/${workspaceId}/${spaceId}/list/${listId}`] : undefined
-  );
-  return { taskId };
+    title,
+  });
 }
 
 // ─── Get subtasks ─────────────────────────────────────────────────────────────
 
 export async function getSubtasks(
-  workspaceId: string,
-  spaceId: string,
+  _workspaceId: string,
+  _spaceId: string,
   parentTaskId: string
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return { error: "Unauthorized" };
   }
+
+  // Access is checked against the space the parent task is really in.
+  const ctx = await resolveTaskContext(parentTaskId);
+  if (!ctx) {
+    return { error: "Task not found" };
+  }
+  const { workspaceId, spaceId } = ctx;
 
   const permErr = await requireViewAccess(
     session.user.id,
@@ -1839,8 +1094,13 @@ export async function bulkUpdateStatus(
     })
     .from(task)
     .leftJoin(listStatus, eq(task.statusId, listStatus.id))
+    .leftJoin(list, eq(task.listId, list.id))
     .where(
-      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+      and(
+        inArray(task.id, taskIds),
+        eq(effectiveTaskSpaceId, spaceId),
+        notDeleted()
+      )
     );
 
   if (affected.length === 0) {
@@ -1958,11 +1218,12 @@ export async function bulkDeleteTasks(
   const affected = await db
     .select({ id: task.id, title: task.title, listId: task.listId })
     .from(task)
+    .leftJoin(list, eq(task.listId, list.id))
     .where(
       and(
         inArray(task.id, taskIds),
         eq(task.workspaceId, workspaceId),
-        or(isNull(task.spaceId), eq(task.spaceId, spaceId)),
+        eq(effectiveTaskSpaceId, spaceId),
         notDeleted()
       )
     );
@@ -2076,8 +1337,13 @@ export async function bulkArchiveTasks(
   const affected = await db
     .select({ id: task.id })
     .from(task)
+    .leftJoin(list, eq(task.listId, list.id))
     .where(
-      and(inArray(task.id, taskIds), eq(task.spaceId, spaceId), notDeleted())
+      and(
+        inArray(task.id, taskIds),
+        eq(effectiveTaskSpaceId, spaceId),
+        notDeleted()
+      )
     );
   if (affected.length === 0) {
     return { ok: true };
@@ -2129,6 +1395,15 @@ export async function bulkMoveTasks(
     return { ok: true, moved: 0 };
   }
 
+  const target = await resolveMoveTarget(
+    session.user.id,
+    workspaceId,
+    targetListId
+  );
+  if ("error" in target) {
+    return target;
+  }
+
   // Pre-fetch all statuses for the target list once
   const targetStatuses = await db
     .select({
@@ -2159,10 +1434,19 @@ export async function bulkMoveTasks(
 
   let moved = 0;
   for (const taskId of taskIds) {
+    // Only tasks that really live in the space the caller was authorised
+    // against; foreign ids are skipped.
     const [t] = await db
       .select({ listId: task.listId, statusId: task.statusId })
       .from(task)
-      .where(and(eq(task.id, taskId), notDeleted()))
+      .leftJoin(list, eq(task.listId, list.id))
+      .where(
+        and(
+          eq(task.id, taskId),
+          eq(effectiveTaskSpaceId, spaceId),
+          notDeleted()
+        )
+      )
       .limit(1);
     if (!t) {
       continue;
@@ -2190,6 +1474,8 @@ export async function bulkMoveTasks(
       .update(task)
       .set({
         listId: targetListId,
+        // Keep the task's own space column in step with the list it now lives in.
+        spaceId: target.spaceId,
         statusId: newStatusId,
         updatedAt: new Date(),
       })

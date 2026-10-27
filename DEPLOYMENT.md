@@ -359,14 +359,15 @@ tasks.yourcompany.com {
 ```nginx
 server {
     server_name tasks.yourcompany.com;
+    # nginx's default is 1 MB, which breaks attachment uploads (10 MB each).
+    # The MCP endpoint (/api/mcp) accepts request bodies up to 40 MB, so allow a bit more.
+    client_max_body_size 45m;
     location / {
         proxy_pass http://localhost:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
     }
-    # Uploads go up to 10 MB; nginx's 1 MB default would reject them.
-    client_max_body_size 12m;
     # Real-time (SSE): do not buffer this endpoint, or live updates lag/stall.
     location /api/me/notifications/stream {
         proxy_pass http://localhost:3000;
@@ -379,6 +380,8 @@ server {
     }
 }
 ```
+
+**Upload size limits.** The MCP endpoint (`/api/mcp`) accepts up to 40 MB per request (images and files travel as base64), so the proxy must allow it: `client_max_body_size 45m;` for nginx as above. Caddy has no request body limit by default. If the site is behind Cloudflare, note that its request body limit is 100 MB, so 40 MB fits.
 
 Make sure `APP_URL` matches the public HTTPS URL. Auth uses it for secure cookies and callback/magic-link URLs.
 

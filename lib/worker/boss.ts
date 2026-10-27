@@ -5,6 +5,7 @@ import { sleep } from "@/lib/utils";
 import { ensureJobQueues } from "@/lib/worker/ensure-queues";
 import {
   JOB_NAMES,
+  RATE_LIMIT_CLEANUP_CRON,
   SPRINT_AUTO_CLOSE_CRON,
   TRASH_AUTO_PURGE_CRON,
 } from "@/lib/worker/job-types";
@@ -88,9 +89,13 @@ export async function startWorker() {
   const { handleTrashAutoPurge } = await import(
     "@/lib/worker/handlers/trash-auto-purge"
   );
+  const { handleRateLimitCleanup } = await import(
+    "@/lib/worker/handlers/rate-limit-cleanup"
+  );
 
   await Promise.all([
     work(JOB_NAMES.TRASH_AUTO_PURGE, handleTrashAutoPurge),
+    work(JOB_NAMES.RATE_LIMIT_CLEANUP, handleRateLimitCleanup),
     work(JOB_NAMES.EMAIL_SEND, handleEmailSend),
     work(JOB_NAMES.EMAIL_OUTBOX_REAP, handleEmailOutboxReap),
     work(JOB_NAMES.EMAIL_EVENTS_PRUNE, handleEmailEventsPrune),
@@ -114,6 +119,11 @@ export async function startWorker() {
   await boss.schedule(JOB_NAMES.IMPERSONATION_CLEANUP, "*/5 * * * *", {});
   await boss.schedule(JOB_NAMES.SUPPORT_TICKET_AUTO_CLOSE, "0 2 * * *", {});
   await boss.schedule(JOB_NAMES.TRASH_AUTO_PURGE, TRASH_AUTO_PURGE_CRON, {});
+  await boss.schedule(
+    JOB_NAMES.RATE_LIMIT_CLEANUP,
+    RATE_LIMIT_CLEANUP_CRON,
+    {}
+  );
 
   // Catch-up run: closes sprints that went overdue while the worker was down,
   // without waiting for the next cron slot. The queue's "exclusive" policy

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { QUEUE_OPTIONS } from "@/lib/worker/ensure-queues";
 import {
   JOB_NAMES,
+  RATE_LIMIT_CLEANUP_CRON,
   SPRINT_AUTO_CLOSE_CRON,
   TRASH_AUTO_PURGE_CRON,
 } from "@/lib/worker/job-types";
@@ -43,5 +44,26 @@ describe("trash auto-purge job registration", () => {
       "boss.schedule(JOB_NAMES.TRASH_AUTO_PURGE, TRASH_AUTO_PURGE_CRON"
     );
     expect(src).toContain("boss.send(JOB_NAMES.TRASH_AUTO_PURGE");
+  });
+});
+
+describe("rate-limit cleanup job registration", () => {
+  it("has a queue and the agreed name", () => {
+    expect(JOB_NAMES.RATE_LIMIT_CLEANUP).toBe("rate-limit.cleanup");
+    expect(QUEUE_OPTIONS[JOB_NAMES.RATE_LIMIT_CLEANUP]).toBeDefined();
+  });
+
+  it("runs every 15 minutes", () => {
+    expect(RATE_LIMIT_CLEANUP_CRON).toBe("*/15 * * * *");
+  });
+
+  it("startWorker registers the handler and the schedule", () => {
+    const src = readFileSync(join(import.meta.dirname, "boss.ts"), "utf8");
+    expect(src).toContain(
+      "work(JOB_NAMES.RATE_LIMIT_CLEANUP, handleRateLimitCleanup)"
+    );
+    expect(src).toMatch(
+      /boss\.schedule\(\s*JOB_NAMES\.RATE_LIMIT_CLEANUP,\s*RATE_LIMIT_CLEANUP_CRON/
+    );
   });
 });

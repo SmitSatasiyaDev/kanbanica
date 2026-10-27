@@ -47,6 +47,7 @@ function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
 interface SaveInput {
   auth?: { passwordSignupEnabled?: unknown };
   google?: { clientId?: unknown; clientSecret?: unknown };
+  mcp?: { enabled?: unknown };
   notifications?: { emailsEnabled?: unknown };
   smtp?: {
     host?: unknown;
@@ -68,7 +69,7 @@ interface SaveInput {
 }
 
 /**
- * Partial update, one section (smtp/google/storage/webPush/notifications/auth) at a time.
+ * Partial update, one section (smtp/google/storage/webPush/notifications/auth/mcp) at a time.
  * Within a section: key omitted = unchanged, "" = clear, non-empty = set
  * (encrypted for secret fields).
  */
@@ -172,6 +173,14 @@ export async function saveIntegrationSettingsAction(
     auditSections.push(
       `auth (password sign-up ${body.auth.passwordSignupEnabled ? "on" : "off"})`
     );
+  }
+
+  if (body.mcp) {
+    if (typeof body.mcp.enabled !== "boolean") {
+      return { error: "Invalid API access setting." };
+    }
+    updates.mcpEnabled = body.mcp.enabled;
+    auditSections.push(`mcp (API access ${body.mcp.enabled ? "on" : "off"})`);
   }
 
   if (body.notifications) {

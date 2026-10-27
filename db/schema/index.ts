@@ -20,3 +20,5 @@ export * from "@/db/schema/support";
 export * from "@/db/schema/channel";
 export * from "@/db/schema/workspace-overview-snapshot";
 export * from "@/db/schema/integration-settings";
+export * from "@/db/schema/api-token";
+export * from "@/db/schema/rate-limit";

@@ -1031,45 +1031,47 @@ export function TaskListRow({
             <CopyIcon className="size-4" />
           </button>
         )}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              className="flex size-7 items-center justify-center rounded-md hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors cursor-pointer"
-              title="Move Status"
-              type="button"
-            >
-              <ArrowsOutCardinalIcon className="size-4" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-48 p-1">
-            <p className="px-2 py-1 text-2xs font-bold text-base-content/60 uppercase tracking-wide">
-              Move Status
-            </p>
-            {statuses.map((s) => (
+        {canEdit && (
+          <Popover>
+            <PopoverTrigger asChild>
               <button
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold hover:bg-base-200 text-left cursor-pointer"
-                key={s.id}
-                onClick={async () => {
-                  await updateTaskStatus(
-                    workspaceId,
-                    spaceId,
-                    effectiveListId,
-                    task.id,
-                    s.id
-                  );
-                  onRefresh();
-                }}
+                className="flex size-7 items-center justify-center rounded-md hover:bg-base-200 text-base-content/60 hover:text-base-content transition-colors cursor-pointer"
+                title="Move Status"
                 type="button"
               >
-                <span
-                  className="size-2 rounded-full shrink-0"
-                  style={{ backgroundColor: s.color }}
-                />
-                <span className="truncate">{s.name}</span>
+                <ArrowsOutCardinalIcon className="size-4" />
               </button>
-            ))}
-          </PopoverContent>
-        </Popover>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-1">
+              <p className="px-2 py-1 text-2xs font-bold text-base-content/60 uppercase tracking-wide">
+                Move Status
+              </p>
+              {statuses.map((s) => (
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-semibold hover:bg-base-200 text-left cursor-pointer"
+                  key={s.id}
+                  onClick={async () => {
+                    await updateTaskStatus(
+                      workspaceId,
+                      spaceId,
+                      effectiveListId,
+                      task.id,
+                      s.id
+                    );
+                    onRefresh();
+                  }}
+                  type="button"
+                >
+                  <span
+                    className="size-2 rounded-full shrink-0"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span className="truncate">{s.name}</span>
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+        )}
         {isAdmin && (
           <button
             className="flex size-7 items-center justify-center rounded-md hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors cursor-pointer"

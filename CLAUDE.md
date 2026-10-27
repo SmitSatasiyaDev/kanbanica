@@ -155,7 +155,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 ### Account Deletion
 - **Block if sole owner**: before deleting, check `workspaceMember` for any workspace where this user is the only ACTIVE OWNER. If found, return an error telling them to transfer ownership first.
 - **Storage cleanup**: delete the avatar file from storage (`storage.delete(user.image)`) before the DB transaction. Non-fatal — proceed even if it fails.
-- **Full transaction order**: `notification` → `userNotificationPreference` / `userEmailPreference` / `mutedEntity` / `pushSubscription` → `userSearchHistory` / `savedFilter` / `userOnboardingProgress` → `taskAssignee` / `taskWatcher` / `timeEntry` / `commentReaction` / `checklistTask` → `spaceMember` / `workspaceMember` / `channelMember` → `session` / `account` / `user`.
+- **Full transaction order**: `notification` → `userNotificationPreference` / `userEmailPreference` / `mutedEntity` / `pushSubscription` / `apiToken` → `userSearchHistory` / `savedFilter` / `userOnboardingProgress` → `taskAssignee` / `taskWatcher` / `timeEntry` / `commentReaction` / `checklistTask` → `spaceMember` / `workspaceMember` / `channelMember` → `session` / `account` / `user`.
 - **Comments & activity logs are NOT deleted** — `comment.authorId` and `activityLog.userId` are plain `text` columns with no FK constraint, so orphaned values are safe. Queries use `.leftJoin(user, ...)` which returns `null` for deleted users. Fallback: `authorName ?? "Deleted User"` and `name ?? "Deleted User"` in the mapping layer.
 - See full spec in `docs/settings.md` § 1.1a.
 
@@ -239,6 +239,14 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 - **Admin actions (`app/actions/workspace.ts`, Owner/Admin via `requireAdmin`):** `updateInviteLinkSettings({ workspaceId, expiresInDays: preset | null | "keep", maxUses: null | 1…10,000 })` (needs an active link; never touches the use count; lowering max uses below current uses just exhausts the link). **`regenerateInviteLink` (also "Enable") is a clean slate:** new token, uses 0, no expiry, no max uses; role is kept. Disable only clears the token.
 - **UX:** the invite-link card shows "Expires in N days · X of Y uses" plus Expires / Max uses selects (saved immediately). Dead links show a warning on the card and a specific message on `/join/[token]`; `/api/join/consume` redirects with `?error=link_expired|link_exhausted` (fixed messages keyed by short code).
 
+### MCP Server & API Tokens
+- **Endpoint:** `app/api/mcp/route.ts` is a stateless Streamable HTTP MCP server (`@modelcontextprotocol/sdk` 1.x). It creates a new `McpServer` and transport per request; never reuse them. The tools live in `lib/mcp/server.ts`. Keep it on the Node runtime (SSE/notifications are in-process).
+- **Auth:** personal API tokens (`api_token`, `lib/api-token.ts`), stored as SHA-256 only and shown once. Created on the personal **API tokens & MCP** page (`app/(app)/[workspaceId]/api-tokens/page.tsx`, user menu → API tokens & MCP, shown only when `isMcpEnabled()`); it also holds the permanent "How to connect" card (`components/profile/mcp-connect-card.tsx`, placeholders only, never a real token). Don't enable Better Auth's `bearer` plugin; token auth and session auth stay separate. Bans are checked live on every call (`banned` + `banExpires`).
+- **Actor + services:** tools and server actions both call `lib/services/*` with an `Actor` (`webActor(session)` or a token actor). **New task, comment or attachment logic goes in a service, not in a server action or tool.** Location always comes from `resolveTaskContext(taskId, actor)`; never trust a caller's `workspaceId`/`spaceId`/`listId`.
+- **Rules:** read-scope tokens are refused on every mutation. A token never reaches a workspace where its owner is a GUEST, or one outside its workspace restriction. MCP status changes must use a status from the task's own list (the web allows any list in the same space). Never add delete, archive or bulk tools.
+- **Switch:** `integration_settings.mcp_enabled` (`isMcpEnabled()`), set in Orbit → Settings → API access (MCP).
+- Spec: `docs/mcp.md`. User guide: `docs/mcp-user-guide.md`.
+
 ### Bug Fix Documentation
 - **Whenever a bug is fixed, record it as two Markdown files in `docs/bugs/`** (create the folder if missing):
   1. `{YYYY-MM-DD}-bug-{bug-title}.md` — describes the bug: symptom, where it happened, root cause.
@@ -271,6 +279,7 @@ uploads/                   ← local file storage (STORAGE_DRIVER=local only), g
 | Search & Filters | `docs/search-and-filters.md` |
 | Custom Fields | `docs/custom-fields.md` |
 | Task Import/Export | `docs/import-export.md` |
+| MCP Server & API Tokens | `docs/mcp.md`, `docs/mcp-user-guide.md` |
 | Trash (Deleted Tasks) | `docs/trash.md` |
 | Permissions | `docs/permission-model.md` |
 | Settings | `docs/settings.md` |

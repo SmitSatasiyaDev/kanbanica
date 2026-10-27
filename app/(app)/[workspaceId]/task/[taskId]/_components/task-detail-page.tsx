@@ -1763,9 +1763,9 @@ export function TaskDetailPage({
                   onOpenChange={setMobileStatusPopoverOpen}
                   open={mobileStatusPopoverOpen}
                 >
-                  <PopoverTrigger asChild>
+                  <PopoverTrigger asChild disabled={!canEditNow}>
                     <button
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors hover:opacity-80"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100"
                       style={{
                         backgroundColor: `${currentStatus?.color ?? "#9CA3AF"}20`,
                         color: currentStatus?.color ?? "#9CA3AF",
@@ -2131,9 +2131,9 @@ export function TaskDetailPage({
                     onOpenChange={setStatusPopoverOpen}
                     open={statusPopoverOpen}
                   >
-                    <PopoverTrigger asChild>
+                    <PopoverTrigger asChild disabled={!canEditNow}>
                       <button
-                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold transition-colors hover:opacity-80"
+                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold transition-colors hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100"
                         style={{
                           backgroundColor: `${currentStatus?.color ?? "#9CA3AF"}20`,
                           color: currentStatus?.color ?? "#9CA3AF",

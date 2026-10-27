@@ -122,6 +122,7 @@ describe("createSubtask", () => {
       {
         id: "p1",
         listId: null,
+        spaceId: "sp-1",
         workspaceId: "ws-1",
         parentTaskId: null,
         ...over,

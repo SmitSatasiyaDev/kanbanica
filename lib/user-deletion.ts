@@ -1,6 +1,7 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 import {
   account,
+  apiToken,
   channelMember,
   checklistTask,
   commentReaction,
@@ -95,6 +96,8 @@ export async function purgeUser(
     await tx
       .delete(pushSubscription)
       .where(eq(pushSubscription.userId, userId));
+    // Personal API tokens (no FK on user_id, so removed by hand)
+    await tx.delete(apiToken).where(eq(apiToken.userId, userId));
     // Search & filters
     await tx
       .delete(userSearchHistory)
