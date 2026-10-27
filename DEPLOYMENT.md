@@ -365,6 +365,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
     }
+    # Uploads go up to 10 MB; nginx's 1 MB default would reject them.
+    client_max_body_size 12m;
     # Real-time (SSE): do not buffer this endpoint, or live updates lag/stall.
     location /api/me/notifications/stream {
         proxy_pass http://localhost:3000;
